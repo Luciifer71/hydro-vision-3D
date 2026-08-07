@@ -1,0 +1,11 @@
+{
+  "camera_matrix": [
+    [1000.0, 0.0, 960.0],
+    [0.0, 1000.0, 540.0],
+    [0.0, 0.0, 1.0]
+  ],
+  "default_altitude_meters": 25.0,
+  "tilt_angle_degrees": 45.0,
+  "sensor_width_mm": 6.4,
+  "focal_length_mm": 4.0
+}
