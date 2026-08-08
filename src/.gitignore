@@ -1,0 +1,14 @@
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+.env
+venv/
+.venv/
+
+# Large Files & Model Weights
+data/raw_video/*.mp4
+data/raw_video/*.avi
+data/raw_video/*.mov
+*.pt
+*.onnx
+*.engine
