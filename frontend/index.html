@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="HYDRO-VISION-3D — AI-Powered 3D Hydro-Spatial Infrastructure Intelligence Dashboard" />
+  <title>HYDRO-VISION-3D | Infrastructure Intelligence Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+<div class="app-layout">
+
+  <!-- ═══════════════════ SIDEBAR ═══════════════════ -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <div class="logo-icon">🌊</div>
+      <h1>HYDRO-VISION<span>3D Intelligence</span></h1>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Main</div>
+      <div class="nav-item active" data-page="dashboard"><span class="nav-icon">📊</span><span>Dashboard</span></div>
+      <div class="nav-item" data-page="map"><span class="nav-icon">🗺️</span><span>GIS Map</span></div>
+      <div class="nav-item" data-page="detections"><span class="nav-icon">🔍</span><span>Detections</span><span class="nav-badge" id="nav-detection-count">0</span></div>
+      <div class="nav-item" data-page="alerts"><span class="nav-icon">🚨</span><span>Alerts</span><span class="nav-badge" id="nav-alert-count">0</span></div>
+      <div class="nav-section-label">Analysis</div>
+      <div class="nav-item" data-page="risk"><span class="nav-icon">⚠️</span><span>Risk Engine</span></div>
+      <div class="nav-item" data-page="volumetric"><span class="nav-icon">📐</span><span>Volumetrics</span></div>
+      <div class="nav-item" data-page="depth"><span class="nav-icon">📏</span><span>Depth Analysis</span></div>
+      <div class="nav-section-label">System</div>
+      <div class="nav-item" data-page="stream"><span class="nav-icon">📹</span><span>Stream Control</span></div>
+      <div class="nav-item" data-page="settings"><span class="nav-icon">⚙️</span><span>Settings</span></div>
+    </nav>
+    <div class="sidebar-footer">
+      <div class="stream-status">
+        <div class="status-dot idle" id="status-dot"></div>
+        <span class="status-label">Stream</span>
+        <span class="status-value" id="status-value">IDLE</span>
+      </div>
+      <div class="stream-status mt-8">
+        <span class="nav-icon" style="font-size:0.85rem;">🎞️</span>
+        <span class="status-label" id="frame-id">Frame #0</span>
+        <div class="fps-display"><span class="fps-value" id="fps-value">0.0</span><span>FPS</span></div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ═══════════════════ HEADER ═══════════════════ -->
+  <header class="header">
+    <div class="header-left">
+      <button class="header-btn" id="sidebar-toggle" title="Menu" style="display:none;"><span>☰</span></button>
+      <div class="header-title" id="header-title">Command Center <span>/ Real-Time Monitoring</span></div>
+      <div class="header-search"><span class="search-icon">🔎</span><input type="text" placeholder="Search hazards, locations..." id="search-input" /></div>
+    </div>
+    <div class="header-right">
+      <div class="header-datetime">
+        <div class="date" id="header-date">Loading...</div>
+        <div class="time" id="header-time">--:--:--</div>
+      </div>
+      <button class="header-btn" title="Notifications"><span>🔔</span><span class="notif-badge" id="notif-badge">3</span></button>
+      <button class="header-btn" title="Settings"><span>⚙️</span></button>
+      <div class="header-avatar" title="Operator">HV</div>
+    </div>
+  </header>
+
+  <!-- ═══════════════════ MAIN CONTENT ═══════════════════ -->
+  <main class="main-content">
+
+    <!-- ══════════ PAGE: Dashboard ══════════ -->
+    <section class="page page-active" id="page-dashboard">
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-top"><span class="kpi-label">Active Hazards</span><div class="kpi-icon">🎯</div></div><div class="kpi-value" id="kpi-hazards">0</div><div class="kpi-trend" id="trend-hazards"><span>—</span><span class="trend-text">awaiting data</span></div></div>
+        <div class="kpi-card"><div class="kpi-top"><span class="kpi-label">Total Affected Area</span><div class="kpi-icon">📐</div></div><div class="kpi-value" id="kpi-area">0.00 m²</div><div class="kpi-trend" id="trend-area"><span>—</span><span class="trend-text">awaiting data</span></div></div>
+        <div class="kpi-card"><div class="kpi-top"><span class="kpi-label">Overall Risk Level</span><div class="kpi-icon">⚠️</div></div><div class="kpi-value" id="kpi-risk" style="color:#10b981;">LOW</div><div class="kpi-trend" id="trend-risk"><span class="trend-text">severity indexer active</span></div></div>
+        <div class="kpi-card"><div class="kpi-top"><span class="kpi-label">Active Alerts</span><div class="kpi-icon">🚨</div></div><div class="kpi-value" id="kpi-alerts">0</div><div class="kpi-trend" id="trend-alerts"><span>—</span><span class="trend-text">awaiting data</span></div></div>
+      </div>
+      <div class="chart-row-main"><div class="card"><div class="card-header"><h3><span class="card-icon">📈</span> Hazard Detection Timeline</h3><span class="card-badge live">● Live</span></div><div class="card-body"><div class="chart-container"><canvas id="timeline-chart"></canvas></div></div></div></div>
+      <div class="chart-row-secondary">
+        <div class="card"><div class="card-header"><h3><span class="card-icon">🎯</span> Severity Distribution</h3></div><div class="card-body"><div class="chart-container small"><canvas id="severity-chart"></canvas></div><div class="flex justify-between mt-12" style="padding:0 8px;"><div class="flex items-center gap-8"><span style="width:8px;height:8px;border-radius:50%;background:#10b981;display:inline-block;"></span><span class="text-muted" style="font-size:0.75rem;">Low</span></div><div class="flex items-center gap-8"><span style="width:8px;height:8px;border-radius:50%;background:#f59e0b;display:inline-block;"></span><span class="text-muted" style="font-size:0.75rem;">Moderate</span></div><div class="flex items-center gap-8"><span style="width:8px;height:8px;border-radius:50%;background:#f97316;display:inline-block;"></span><span class="text-muted" style="font-size:0.75rem;">High</span></div><div class="flex items-center gap-8"><span style="width:8px;height:8px;border-radius:50%;background:#ef4444;display:inline-block;"></span><span class="text-muted" style="font-size:0.75rem;">Critical</span></div></div></div></div>
+        <div class="card"><div class="card-header"><h3><span class="card-icon">🏷️</span> Hazard Classification</h3></div><div class="card-body"><div class="chart-container small"><canvas id="types-chart"></canvas></div></div></div>
+        <div class="card"><div class="card-header"><h3><span class="card-icon">🌡️</span> Risk Score Gauge</h3></div><div class="card-body"><div class="chart-container small" style="position:relative;"><canvas id="gauge-chart"></canvas><div class="gauge-wrap" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;padding-top:20px;"><div class="gauge-value" id="gauge-value" style="color:#10b981;">18</div><div class="gauge-label" id="gauge-label"><span class="risk-badge low">LOW</span></div><div class="gauge-action" id="gauge-action">Monitor routine conditions.</div></div></div></div></div>
+      </div>
+      <div class="chart-row-bottom">
+        <div class="card"><div class="card-header"><h3><span class="card-icon">🗺️</span> GIS Hazard Map — Vadodara</h3><span class="card-badge live">● Live</span></div><div class="card-body" style="padding:0;"><div class="map-container"><div id="hazard-map"></div></div></div></div>
+        <div class="card"><div class="card-header"><h3><span class="card-icon">🚨</span> Live Hazard Feed</h3><span class="card-badge live">● Streaming</span></div><div class="card-body" style="padding:0;"><div class="alerts-table-wrap"><table class="alerts-table"><thead><tr><th>Time</th><th>Type</th><th>Location</th><th>Area (m²)</th><th>Conf.</th><th>Severity</th></tr></thead><tbody id="alerts-tbody"></tbody></table></div></div></div>
+      </div>
+    </section>
+
+    <!-- ══════════ PAGE: GIS Map ══════════ -->
+    <section class="page" id="page-map">
+      <div class="card"><div class="card-header"><h3><span class="card-icon">🗺️</span> GIS Hazard Map — Vadodara</h3><span class="card-badge live">● Live</span></div><div class="card-body" style="padding:0;"><div class="full-map-container"><div id="fullpage-map"></div></div></div></div>
+      <div class="card"><div class="card-header"><h3>Map Legend</h3></div><div class="card-body"><div class="map-legend"><div class="legend-item"><span class="legend-dot" style="background:#ef4444;"></span> Pothole</div><div class="legend-item"><span class="legend-dot" style="background:#00d4ff;"></span> Water Body</div><div class="legend-item"><span class="legend-dot" style="background:#f59e0b;"></span> Crack</div><div class="legend-item"><span class="legend-dot" style="background:#a855f7;"></span> Flooding</div></div><div class="map-legend mt-8"><div class="legend-item"><span class="severity-badge low">LOW</span> &lt; 5 m²</div><div class="legend-item"><span class="severity-badge moderate">MODERATE</span> 5–25 m²</div><div class="legend-item"><span class="severity-badge high">HIGH</span> 25–75 m²</div><div class="legend-item"><span class="severity-badge critical">CRITICAL</span> ≥ 75 m²</div></div></div></div>
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);">
+        <div class="kpi-card"><div class="kpi-top"><span class="kpi-label">Total Markers</span><div class="kpi-icon">📍</div></div><div class="kpi-value" id="map-total-markers">0</div></div>
+        <div class="kpi-card"><div class="kpi-top"><span class="kpi-label">Coverage Area</span><div class="kpi-icon">📐</div></div><div class="kpi-value" id="map-coverage">0.00 m²</div></div>
+        <div class="kpi-card"><div class="kpi-top"><span class="kpi-label">Last Updated</span><div class="kpi-icon">🕐</div></div><div class="kpi-value" id="map-last-updated" style="font-size:1.1rem;">--:--:--</div></div>
+      </div>
+    </section>
+
+    <!-- ══════════ PAGE: Detections ══════════ -->
+    <section class="page" id="page-detections">
+      <div class="card">
+        <div class="card-header"><h3><span class="card-icon">🔍</span> All Detections</h3><span class="card-badge live" id="detection-total-badge">0</span></div>
+        <div class="card-body">
+          <div class="search-filter-bar">
+            <input class="form-input" type="text" id="detection-search" placeholder="Search by track ID, type, location..." />
+            <select class="form-select" id="detection-type-filter"><option value="all">All Types</option><option value="pothole">Pothole</option><option value="water_body">Water Body</option><option value="crack">Crack</option><option value="flooding">Flooding</option></select>
+          </div>
+          <div class="alerts-table-wrap" style="max-height:500px;">
+            <table class="alerts-table" id="detections-table"><thead><tr><th>Track ID</th><th>Type</th><th>Confidence</th><th>Area (m²)</th><th>Location</th><th>Severity</th><th>Status</th></tr></thead><tbody id="detections-tbody"></tbody></table>
+          </div>
+          <div id="detection-info" class="text-faint mt-8" style="font-size:0.78rem;padding:8px 0;"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ PAGE: Alerts ══════════ -->
+    <section class="page" id="page-alerts">
+      <div class="mini-kpi-grid">
+        <div class="mini-kpi kpi-card"><div class="kpi-top"><span class="kpi-label">Critical</span></div><div class="kpi-value" id="alert-critical-count" style="color:#ef4444;">0</div></div>
+        <div class="mini-kpi kpi-card"><div class="kpi-top"><span class="kpi-label">High</span></div><div class="kpi-value" id="alert-high-count" style="color:#f97316;">0</div></div>
+        <div class="mini-kpi kpi-card"><div class="kpi-top"><span class="kpi-label">Moderate</span></div><div class="kpi-value" id="alert-moderate-count" style="color:#f59e0b;">0</div></div>
+      </div>
+      <div class="card">
+        <div class="card-header"><h3><span class="card-icon">🚨</span> Active Alerts</h3><span class="card-badge live" id="alerts-total-badge">0</span></div>
+        <div class="card-body">
+          <div class="filter-bar">
+            <button class="alert-filter-btn active" data-filter="all">All</button>
+            <button class="alert-filter-btn" data-filter="critical">Critical</button>
+            <button class="alert-filter-btn" data-filter="high">High</button>
+            <button class="alert-filter-btn" data-filter="moderate">Moderate</button>
+          </div>
+          <div class="alerts-table-wrap" style="max-height:450px;">
+            <table class="alerts-table" id="alerts-full-table"><thead><tr><th>Time</th><th>Track ID</th><th>Type</th><th>Area (m²)</th><th>Confidence</th><th>Severity</th><th>Action</th></tr></thead><tbody id="alerts-full-tbody"></tbody></table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════ PAGE: Risk Engine ══════════ -->
+    <section class="page" id="page-risk">
+      <div class="card"><div class="card-header"><h3><span class="card-icon">⚠️</span> Risk Engine — Severity Indexer</h3></div><div class="card-body">
+        <div class="threshold-row low"><span class="threshold-range">&lt; 5.0 m²</span><span class="threshold-level" style="color:var(--success);">LOW (1)</span><span class="threshold-action">Monitor routine conditions.</span></div>
+        <div class="threshold-row moderate"><span class="threshold-range">5.0 – 25.0 m²</span><span class="threshold-level" style="color:var(--warning);">MODERATE (2)</span><span class="threshold-action">Schedule standard maintenance check.</span></div>
+        <div class="threshold-row high"><span class="threshold-range">25.0 – 75.0 m²</span><span class="threshold-level" style="color:var(--orange);">HIGH (3)</span><span class="threshold-action">Dispatch local maintenance crew.</span></div>
+        <div class="threshold-row critical"><span class="threshold-range">≥ 75.0 m²</span><span class="threshold-level" style="color:var(--danger);">CRITICAL (4)</span><span class="threshold-action">Issue emergency response and traffic reroute.</span></div>
+      </div></div>
+      <div class="chart-row-bottom">
+        <div class="card"><div class="card-header"><h3>Risk Distribution Over Time</h3></div><div class="card-body"><div class="chart-container small"><canvas id="risk-timeline-chart"></canvas></div></div></div>
+        <div class="card"><div class="card-header"><h3>Current Risk Breakdown</h3></div><div class="card-body"><div class="chart-container small"><canvas id="risk-breakdown-chart"></canvas></div></div></div>
+      </div>
+      <div class="card"><div class="card-header"><h3>EMA Smoothing</h3></div><div class="card-body">
+        <div class="formula-display">Area_smoothed = 0.7 × Area_previous + 0.3 × Area_current</div>
+        <p class="text-muted" style="font-size:0.85rem;line-height:1.6;margin-top:12px;">Exponential Moving Average (EMA) smoothing reduces noise in real-time area measurements by blending previous and current values. The α coefficient of 0.3 prioritizes stability while remaining responsive to genuine changes in hazard size.</p>
+      </div></div>
+    </section>
+
+    <!-- ══════════ PAGE: Volumetrics ══════════ -->
+    <section class="page" id="page-volumetric">
+      <div class="kpi-grid" style="grid-template-columns:repeat(3,1fr);">
+        <div class="kpi-card"><div class="kpi-top"><span class="kpi-label">Total Surface Area</span><div class="kpi-icon">📐</div></div><div class="kpi-value" id="vol-total-area">0.00 m²</div></div>
+        <div class="kpi-card"><div class="kpi-top"><span class="kpi-label">Avg Area / Hazard</span><div class="kpi-icon">📊</div></div><div class="kpi-value" id="vol-avg-area">0.00 m²</div></div>
+        <div class="kpi-card"><div class="kpi-top"><span class="kpi-label">Largest Hazard</span><div class="kpi-icon">🔺</div></div><div class="kpi-value" id="vol-largest">0.00 m²</div></div>
+      </div>
+      <div class="card"><div class="card-header"><h3>Area Distribution by Type</h3></div><div class="card-body"><div class="chart-container"><canvas id="vol-area-chart"></canvas></div></div></div>
+      <div class="card"><div class="card-header"><h3>Ground Sample Distance (GSD)</h3></div><div class="card-body">
+        <div class="formula-display">GSD = (altitude × sensor_width) / (focal_length × image_width)</div>
+        <p class="text-muted" style="font-size:0.85rem;line-height:1.6;margin-top:12px;">GSD determines the real-world size of each pixel. At 25m altitude with a 6.4mm sensor and 4.0mm focal length, each pixel represents approximately 0.025m on the ground. Surface area is corrected for the 45° camera tilt using cosine compensation.</p>
+      </div></div>
+      <div class="card"><div class="card-header"><h3>Area Breakdown per Type</h3></div><div class="card-body" style="padding:0;"><div class="alerts-table-wrap"><table class="alerts-table"><thead><tr><th>Type</th><th>Count</th><th>Total Area (m²)</th><th>Avg Area (m²)</th><th>Max Area (m²)</th></tr></thead><tbody id="vol-breakdown-tbody"></tbody></table></div></div></div>
+    </section>
+
+    <!-- ══════════ PAGE: Depth Analysis ══════════ -->
+    <section class="page" id="page-depth">
+      <div class="card"><div class="card-header"><h3><span class="card-icon">📏</span> Depth Analysis — Monocular Depth Estimation</h3></div><div class="card-body">
+        <div class="threshold-row moderate" style="border-left-color:var(--cyan);background:var(--cyan-dim);"><span class="threshold-action" style="color:var(--text-primary);">ℹ️ Depth Anything V2 model integration is planned for a future release. The features below show planned capabilities.</span></div>
+      </div></div>
+      <div class="info-grid">
+        <div class="info-card"><span class="coming-soon-badge">Coming Soon</span><div class="info-icon">📏</div><h4>Monocular Depth</h4><p>Estimate per-pixel depth from a single drone camera frame using Depth Anything V2.</p></div>
+        <div class="info-card"><span class="coming-soon-badge">Coming Soon</span><div class="info-icon">📐</div><h4>Volume Estimation</h4><p>Calculate pothole volume in m³ by integrating depth maps over segmented regions.</p></div>
+        <div class="info-card"><span class="coming-soon-badge">Coming Soon</span><div class="info-icon">🔺</div><h4>Surface Normals</h4><p>Compute surface normal vectors from 3D point clouds for terrain analysis.</p></div>
+        <div class="info-card"><span class="coming-soon-badge">Coming Soon</span><div class="info-icon">☁️</div><h4>Point Cloud</h4><p>Generate 3D point clouds from depth maps using camera intrinsics for spatial reconstruction.</p></div>
+      </div>
+      <div class="card"><div class="card-header"><h3>Pipeline Architecture</h3></div><div class="card-body">
+        <div class="pipeline-diagram">
+          <div class="pipeline-step">📹 Frame</div><span class="pipeline-arrow">→</span>
+          <div class="pipeline-step">🧠 Depth Anything V2</div><span class="pipeline-arrow">→</span>
+          <div class="pipeline-step">🗺️ Depth Map</div><span class="pipeline-arrow">→</span>
+          <div class="pipeline-step">📐 3D Geometry Engine</div><span class="pipeline-arrow">→</span>
+          <div class="pipeline-step">📊 Volume Estimation</div>
+        </div>
+      </div></div>
+    </section>
+
+    <!-- ══════════ PAGE: Stream Control ══════════ -->
+    <section class="page" id="page-stream">
+      <div class="card"><div class="card-header"><h3><span class="card-icon">📹</span> Stream Control Panel</h3></div><div class="card-body">
+        <div class="status-grid">
+          <div class="status-item"><div class="status-item-label">Connection</div><div class="status-item-value" id="stream-conn-status">Simulation</div></div>
+          <div class="status-item"><div class="status-item-label">Stream Status</div><div class="status-item-value" id="stream-status-display">IDLE</div></div>
+          <div class="status-item"><div class="status-item-label">Current Frame</div><div class="status-item-value" id="stream-frame-display">#0</div></div>
+          <div class="status-item"><div class="status-item-label">Processing FPS</div><div class="status-item-value" id="stream-fps-display">0.0</div></div>
+        </div>
+        <div class="btn-group mt-12">
+          <button class="btn-primary" id="btn-start-stream">▶ Start Stream</button>
+          <button class="btn-danger" id="btn-stop-stream">⏹ Stop Stream</button>
+          <button class="btn-outline" id="btn-reset-stream">↺ Reset Simulation</button>
+        </div>
+      </div></div>
+      <div class="card"><div class="card-header"><h3>Video Source</h3></div><div class="card-body">
+        <div class="form-group"><label class="form-label">Video File Path</label><input class="form-input" type="text" id="video-path-input" value="data/raw_video/sample_drone.mp4" /></div>
+      </div></div>
+      <div class="card"><div class="card-header"><h3>API Endpoints</h3></div><div class="card-body" style="padding:0;"><div class="alerts-table-wrap">
+        <table class="api-table"><thead><tr><th>Method</th><th>Endpoint</th><th>Description</th></tr></thead><tbody>
+          <tr><td><span class="method-badge get">GET</span></td><td class="font-mono">/api/health</td><td>System health & stream status</td></tr>
+          <tr><td><span class="method-badge get">GET</span></td><td class="font-mono">/api/hazards</td><td>Current hazard detections</td></tr>
+          <tr><td><span class="method-badge get">GET</span></td><td class="font-mono">/api/hazards/geojson</td><td>Hazards as GeoJSON FeatureCollection</td></tr>
+          <tr><td><span class="method-badge get">GET</span></td><td class="font-mono">/api/stream/start</td><td>Start video processing pipeline</td></tr>
+          <tr><td><span class="method-badge get">GET</span></td><td class="font-mono">/api/stream/stop</td><td>Stop stream and reset state</td></tr>
+          <tr><td><span class="method-badge get">GET</span></td><td class="font-mono">/api/config</td><td>Camera intrinsics & system config</td></tr>
+          <tr><td><span class="method-badge ws">WS</span></td><td class="font-mono">/ws/live-stream</td><td>Real-time WebSocket hazard stream</td></tr>
+        </tbody></table>
+      </div></div></div>
+      <div class="card"><div class="card-header"><h3>Connection Log</h3></div><div class="card-body"><div class="connection-log" id="connection-log"><span class="log-entry"><span class="log-time">[--:--:--]</span> Dashboard initialized</span></div></div></div>
+    </section>
+
+    <!-- ══════════ PAGE: Settings ══════════ -->
+    <section class="page" id="page-settings">
+      <div class="card"><div class="card-header"><h3><span class="card-icon">⚙️</span> Dashboard Settings</h3></div><div class="card-body">
+        <div class="chart-row-bottom" style="gap:18px;">
+          <div>
+            <h4 style="font-size:0.9rem;margin-bottom:12px;color:var(--text-primary);">Data Source</h4>
+            <div class="form-radio-group">
+              <label class="form-radio"><input type="radio" name="data-source" id="source-live" value="live" /><div><strong>Live Backend (WebSocket)</strong><br/><span class="text-muted" style="font-size:0.78rem;">Connect to FastAPI at ws://localhost:8000</span></div></label>
+              <label class="form-radio"><input type="radio" name="data-source" id="source-sim" value="simulation" checked /><div><strong>Simulation Mode</strong><br/><span class="text-muted" style="font-size:0.78rem;">Generate realistic mock data client-side</span></div></label>
+            </div>
+            <h4 style="font-size:0.9rem;margin:20px 0 12px;color:var(--text-primary);">Backend Configuration</h4>
+            <div class="form-group"><label class="form-label">API URL</label><input class="form-input" type="text" id="setting-api-url" value="http://localhost:8000" /></div>
+            <div class="form-group"><label class="form-label">WebSocket URL</label><input class="form-input" type="text" id="setting-ws-url" value="ws://localhost:8000/ws/live-stream" /></div>
+            <div class="form-group"><label class="form-label">Update Interval (ms)</label><input class="form-input" type="number" id="setting-interval" value="2000" /></div>
+          </div>
+          <div>
+            <h4 style="font-size:0.9rem;margin-bottom:12px;color:var(--text-primary);">Display Settings</h4>
+            <label class="form-checkbox"><input type="checkbox" id="setting-animations" checked /> Show Animations</label>
+            <label class="form-checkbox"><input type="checkbox" id="setting-dark-map" checked /> Dark Map Tiles</label>
+            <label class="form-checkbox"><input type="checkbox" id="setting-autoscroll" checked /> Auto-scroll Alerts</label>
+            <div class="card mt-12" style="background:var(--bg-elevated);"><div class="card-body about-card">
+              <h3 style="margin-bottom:8px;">🌊 HYDRO-VISION-3D</h3>
+              <div class="version">v1.0.0 — ELCIA Tech Summit 2026</div>
+              <p class="text-muted mt-8" style="font-size:0.82rem;">AI-Powered 3D Hydro-Spatial Infrastructure Intelligence for Smart Cities</p>
+              <div class="tech-badges mt-8">
+                <span class="tech-badge">YOLOv8-seg</span><span class="tech-badge">ByteTrack</span><span class="tech-badge">FastAPI</span>
+                <span class="tech-badge">WebSocket</span><span class="tech-badge">Leaflet.js</span><span class="tech-badge">Chart.js</span>
+                <span class="tech-badge">PostGIS</span><span class="tech-badge">Python 3.11</span>
+              </div>
+            </div></div>
+          </div>
+        </div>
+        <div class="mt-12"><button class="btn-primary" id="btn-save-settings">💾 Save Settings</button></div>
+      </div></div>
+    </section>
+
+  </main>
+</div>
+<script src="script.js"></script>
+</body>
+</html>

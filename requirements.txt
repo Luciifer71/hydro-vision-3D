@@ -1,0 +1,21 @@
+# ============================================================
+# HYDRO-VISION-3D — Python Dependencies
+# AI-Powered 3D Hydro-Spatial Infrastructure Intelligence
+# ============================================================
+
+# --- Core AI / Deep Learning ---
+torch>=2.1.0
+torchvision>=0.16.0
+ultralytics>=8.1.0              # YOLOv8 segmentation + ByteTrack tracking
+
+# --- Computer Vision ---
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# --- Backend / API ---
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0      # ASGI server with websocket support
+httpx>=0.25.0                   # Async HTTP client (stream_bridge)
+
+# --- Utilities ---
+Pillow>=10.0.0                  # Image processing utilities

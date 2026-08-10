@@ -1,9 +1,9 @@
 import math
 
 class GeoTranslator:
-    def __init__(self, home_lat: float = 12.8390, home_lon: float = 77.6519):
+    def __init__(self, home_lat: float = 22.3072, home_lon: float = 73.1812):
         """
-        Initializes base GPS coordinates (default: ELCIA / Electronic City, Bengaluru).
+        Initializes base GPS coordinates (default: Vadodara, Gujarat, India).
         """
         self.home_lat = home_lat
         self.home_lon = home_lon
