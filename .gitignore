@@ -1,0 +1,35 @@
+# Ignore model weights and checkpoints
+*.pt
+*.onnx
+*.engine
+models/
+
+# Ignore video files
+*.mp4
+*.avi
+*.mov
+data/raw_video/*
+
+# Ignore frontend build output and dependencies
+node_modules/
+frontend/node_modules/
+.next/
+dist/
+data/raw_video/
+*.mp4
+*.pt
+
+
+__pycache__/
+*.pyc
+
+
+static/snapshots/
+
+
+runs/
+
+
+data/
+models/
+
