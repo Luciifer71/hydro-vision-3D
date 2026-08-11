@@ -8,7 +8,9 @@ from typing import List, Dict, Any
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from fastapi.responses import FileResponse
+from fastapi import FastAPI, BackgroundTasks
+from pydantic import BaseModel  # Resolves "BaseModel is not defined"
 
 # Ensure src modules are resolvable
 sys.path.append(os.path.join(os.path.dirname(__file__), ".."))
@@ -29,11 +31,13 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Ensure snapshot directory exists and mount static directory for visual evidence
-SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "static", "snapshots")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+SNAPSHOT_DIR = os.path.join(BASE_DIR, "static", "snapshots")  # Resolves "SNAPSHOT_DIR is not defined"
 os.makedirs(SNAPSHOT_DIR, exist_ok=True)
-app.mount("/static", StaticFiles(directory=os.path.join(os.path.dirname(__file__), "..", "..", "static")), name="static")
-
+# Serve frontend static files
+FRONTEND_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "frontend")
+if os.path.isdir(FRONTEND_DIR):
+    app.mount("/static", StaticFiles(directory=FRONTEND_DIR), name="static")
 
 class ConnectionManager:
     """Manages active WebSocket connections to dashboard clients."""
@@ -343,3 +347,44 @@ async def websocket_endpoint(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         manager.disconnect(websocket)
+
+
+@app.get("/api/stream/stop")
+async def stop_stream():
+    """Resets stream status back to IDLE."""
+    latest_system_state["status"] = "IDLE"
+    latest_system_state["total_hazards"] = 0
+    latest_system_state["total_area_m2"] = 0.0
+    latest_system_state["risk_level"] = "LOW"
+    latest_system_state["hazards"] = []
+    return {"message": "Stream stopped and state reset."}
+
+
+@app.get("/api/config")
+async def get_config():
+    """Returns system configuration for the frontend."""
+    import json
+    config_path = os.path.join(os.path.dirname(__file__), "..", "..", "config", "camera_intrinsics.json")
+    config_data = {}
+    if os.path.isfile(config_path):
+        with open(config_path, "r") as f:
+            config_data = json.load(f)
+    return {
+        "camera": config_data,
+        "home_coordinates": {"latitude": 22.3072, "longitude": 73.1812},
+        "severity_thresholds": {
+            "LOW": {"max_area_m2": 5.0, "score": 1},
+            "MODERATE": {"max_area_m2": 25.0, "score": 2},
+            "HIGH": {"max_area_m2": 75.0, "score": 3},
+            "CRITICAL": {"max_area_m2": float("inf"), "score": 4}
+        }
+    }
+
+
+@app.get("/")
+async def serve_frontend():
+    """Serves the frontend dashboard."""
+    index_path = os.path.join(FRONTEND_DIR, "index.html")
+    if os.path.isfile(index_path):
+        return FileResponse(index_path)
+    return {"error": "Frontend not found. Place index.html in the frontend/ directory."}
