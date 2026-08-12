@@ -1,35 +1,33 @@
-# Ignore model weights and checkpoints
-*.pt
-*.onnx
-*.engine
-models/
+# Python & System Cache
+__pycache__/
+*.pyc
 
-# Ignore video files
-*.mp4
-*.avi
-*.mov
-data/raw_video/*
-
-# Ignore frontend build output and dependencies
+# Dependencies & Build Outputs
 node_modules/
 frontend/node_modules/
 .next/
 dist/
-data/raw_video/
-*.mp4
+
+# Model Weights & Checkpoints
+models/
 *.pt
+*.onnx
+*.engine
 
-
-__pycache__/
-*.pyc
-
-
+# Runs, Snapshots & Outputs
+runs/
 static/snapshots/
 
+# Global Video Exceptions
+*.avi
+*.mov
+*.mp4
 
-runs/
-
-
-data/
-models/
-
+# ------------------------------------------------------------------
+# DATA DIRECTORY RULES
+# Ignore all datasets & files inside data/, BUT track master_video.mp4
+# ------------------------------------------------------------------
+data/*
+!data/raw_videos/
+data/raw_videos/*
+!data/raw_videos/master_video.mp4

@@ -2,7 +2,7 @@
 
 <p align="center">
   <strong>AI-Powered Real-Time Road Hazard & Waterlogging Intelligence for Smart Cities</strong><br>
-  Team AeroRaven &nbsp;•&nbsp; ELCIA Tech Summit 2026 Hackathon
+  Team Drone404 &nbsp;•&nbsp; ELCIA Tech Summit 2026 Hackathon
 </p>
 
 <p align="center">
@@ -286,8 +286,7 @@ Measured live during development on the hardware above, running the full FastAPI
 | 3 | Live Detections table | `docs/screenshots/03-detections.png` |
 | 4 | Alerts & Incidents | `docs/screenshots/04-alerts.png` |
 | 5 | Risk Engine | `docs/screenshots/05-risk-engine.png` |
-| 6 | Volumetrics | `docs/screenshots/06-volumetrics.png` |
-| 7 | Stream Control Panel | `docs/screenshots/07-stream-control.png` |
+| 6 | Volumetrics | `docs/screenshots/06-DepthAnalysis.png` |
 
 <p align="center">
   <img src="docs/screenshots/01-dashboard-overview.png" width="800" alt="Dashboard Overview" />
@@ -310,18 +309,14 @@ Measured live during development on the hardware above, running the full FastAPI
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/06-volumetrics.png" width="800" alt="Volumetrics" />
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/07-stream-control.png" width="800" alt="Stream Control Panel" />
+  <img src="docs/screenshots/06-DepthAnalysis.png" width="800" alt="DepthAnalysis" />
 </p>
 
 ---
 
 ## 👥 Team
 
-**Team AeroRaven** — built for the ELCIA Tech Summit 2026 Hackathon.
+**Team Drone404** — built for the ELCIA Tech Summit 2026 Hackathon.
 
 ---
 
