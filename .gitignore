@@ -31,3 +31,15 @@ data/*
 !data/raw_videos/
 data/raw_videos/*
 !data/raw_videos/master_video.mp4
+
+# Dataset raw downloads and images — too large for git, re-downloaded/generated locally
+data/multiclass_dataset/raw_downloads/
+data/multiclass_dataset/images/
+data/multiclass_dataset/labels/
+!data/multiclass_dataset/raw_downloads/.gitkeep
+!data/multiclass_dataset/images/train/.gitkeep
+!data/multiclass_dataset/images/val/.gitkeep
+!data/multiclass_dataset/images/test/.gitkeep
+!data/multiclass_dataset/labels/train/.gitkeep
+!data/multiclass_dataset/labels/val/.gitkeep
+!data/multiclass_dataset/labels/test/.gitkeep
