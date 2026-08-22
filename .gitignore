@@ -1,41 +1,41 @@
-# Python & System Cache
+# Byte-compiled / Python internal files
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+*.log
 
-# Dependencies & Build Outputs
-node_modules/
-frontend/node_modules/
-.next/
-dist/
+# Virtual Environments
+.venv/
+venv/
+env/
 
-# Model Weights & Checkpoints
-models/
-*.pt
-*.onnx
-*.engine
+# Operating System & IDE Artifacts
+.DS_Store
+.vscode/
+.idea/
+Thumbs.db
 
-# Runs, Snapshots & Outputs
-runs/
-static/snapshots/
+# YOLO Caches & Base Models
+*.cache
+yolov8s.pt
+yolov8s-seg.pt
 
-# Global Video Exceptions
-*.avi
-*.mov
-*.mp4
+# Training Outputs (Ignore active runs, but keep path clear for best.pt)
+runs/*
+!runs/
+!runs/hydro_vision_m4pro/
+!runs/hydro_vision_m4pro/weights/
+!runs/hydro_vision_m4pro/weights/best.pt
 
-# ------------------------------------------------------------------
-# DATA DIRECTORY RULES
-# Ignore all datasets & files inside data/, BUT track master_video.mp4
-# ------------------------------------------------------------------
-data/*
-!data/raw_videos/
+# Dataset Directory Rules (Keep repo lightweight)
+data/multiclass_dataset/raw_downloads/*
+data/multiclass_dataset/images/*
+data/multiclass_dataset/labels/*
 data/raw_videos/*
-!data/raw_videos/master_video.mp4
 
-# Dataset raw downloads and images — too large for git, re-downloaded/generated locally
-data/multiclass_dataset/raw_downloads/
-data/multiclass_dataset/images/
-data/multiclass_dataset/labels/
+# Exceptions (Files explicitly tracked in Git)
+!data/raw_videos/master_video.mp4
+!data/multiclass_dataset/road_hazards.yaml
 !data/multiclass_dataset/raw_downloads/.gitkeep
 !data/multiclass_dataset/images/train/.gitkeep
 !data/multiclass_dataset/images/val/.gitkeep
