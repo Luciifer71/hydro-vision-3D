@@ -1,0 +1,365 @@
+{
+  "type": "FeatureCollection",
+  "features": [
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18119907866036,
+          22.307199126362068
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0001",
+        "class_id": 0,
+        "class_name": "pothole_dry",
+        "confidence": 0.9488,
+        "estimated_volume_m3": 0.0488,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:47:59.360532Z",
+        "last_detected": "2026-08-23T21:48:05.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18190042063293,
+          22.307799768165612
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0002",
+        "class_id": 1,
+        "class_name": "pothole_waterlogged",
+        "confidence": 0.9537,
+        "estimated_volume_m3": 0.0857,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:48:05.360532Z",
+        "last_detected": "2026-08-23T21:48:11.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18250056394608,
+          22.308499665152155
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0003",
+        "class_id": 3,
+        "class_name": "waterlogging_area",
+        "confidence": 0.9582,
+        "estimated_volume_m3": 0.3539,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:48:11.360532Z",
+        "last_detected": "2026-08-23T21:48:17.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.1831010476265,
+          22.309100782035866
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0004",
+        "class_id": 6,
+        "class_name": "open_manhole",
+        "confidence": 0.9484,
+        "estimated_volume_m3": 0.1238,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:48:17.360532Z",
+        "last_detected": "2026-08-23T21:48:23.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18050060539147,
+          22.306500210062453
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0005",
+        "class_id": 2,
+        "class_name": "crack",
+        "confidence": 0.9488,
+        "estimated_volume_m3": 0.0157,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:48:23.360532Z",
+        "last_detected": "2026-08-23T21:48:29.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.17979988789972,
+          22.30589973208786
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0006",
+        "class_id": 4,
+        "class_name": "drainage_overflow",
+        "confidence": 0.9526,
+        "estimated_volume_m3": 0.2131,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:48:29.360532Z",
+        "last_detected": "2026-08-23T21:48:35.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.17909996680554,
+          22.305199530341515
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0007",
+        "class_id": 5,
+        "class_name": "damaged_footpath",
+        "confidence": 0.9577,
+        "estimated_volume_m3": 0.154,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:48:35.360532Z",
+        "last_detected": "2026-08-23T21:48:41.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18019970419692,
+          22.30809941289654
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0008",
+        "class_id": 0,
+        "class_name": "pothole_dry",
+        "confidence": 0.9598,
+        "estimated_volume_m3": 0.0414,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:48:41.360532Z",
+        "last_detected": "2026-08-23T21:48:47.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18399951544635,
+          22.309798786886496
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0009",
+        "class_id": 1,
+        "class_name": "pothole_waterlogged",
+        "confidence": 0.9594,
+        "estimated_volume_m3": 0.0989,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:48:47.360532Z",
+        "last_detected": "2026-08-23T21:48:53.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.1848005512073,
+          22.310501434216665
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0010",
+        "class_id": 3,
+        "class_name": "waterlogging_area",
+        "confidence": 0.958,
+        "estimated_volume_m3": 0.5237,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:48:53.360532Z",
+        "last_detected": "2026-08-23T21:48:59.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.17820068761019,
+          22.30450035496739
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0011",
+        "class_id": 6,
+        "class_name": "open_manhole",
+        "confidence": 0.9579,
+        "estimated_volume_m3": 0.1137,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:48:59.360532Z",
+        "last_detected": "2026-08-23T21:49:05.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.17749974762835,
+          22.303800867330857
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0012",
+        "class_id": 2,
+        "class_name": "crack",
+        "confidence": 0.9599,
+        "estimated_volume_m3": 0.0219,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:49:05.360532Z",
+        "last_detected": "2026-08-23T21:49:11.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18550141989034,
+          22.311199508860778
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0013",
+        "class_id": 0,
+        "class_name": "pothole_dry",
+        "confidence": 0.9471,
+        "estimated_volume_m3": 0.0639,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:49:11.360532Z",
+        "last_detected": "2026-08-23T21:49:17.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18620108773304,
+          22.311901035346864
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0014",
+        "class_id": 4,
+        "class_name": "drainage_overflow",
+        "confidence": 0.9343,
+        "estimated_volume_m3": 0.1837,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:49:17.360532Z",
+        "last_detected": "2026-08-23T21:49:23.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18349888748516,
+          22.30680015295821
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0015",
+        "class_id": 1,
+        "class_name": "pothole_waterlogged",
+        "confidence": 0.9572,
+        "estimated_volume_m3": 0.0788,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:49:23.360532Z",
+        "last_detected": "2026-08-23T21:49:29.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18420026468493,
+          22.307401024122854
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0016",
+        "class_id": 5,
+        "class_name": "damaged_footpath",
+        "confidence": 0.9525,
+        "estimated_volume_m3": 0.1438,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:49:29.360532Z",
+        "last_detected": "2026-08-23T21:49:35.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.1789999173682,
+          22.30879997299436
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0017",
+        "class_id": 0,
+        "class_name": "pothole_dry",
+        "confidence": 0.9545,
+        "estimated_volume_m3": 0.0559,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:49:35.360532Z",
+        "last_detected": "2026-08-23T21:49:41.160532Z"
+      }
+    },
+    {
+      "type": "Feature",
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          73.18150019132757,
+          22.310100336068004
+        ]
+      },
+      "properties": {
+        "hazard_id": "HAZ-0018",
+        "class_id": 6,
+        "class_name": "open_manhole",
+        "confidence": 0.9449,
+        "estimated_volume_m3": 0.1336,
+        "detections_count": 30,
+        "first_detected": "2026-08-23T21:49:41.360532Z",
+        "last_detected": "2026-08-23T21:49:47.160532Z"
+      }
+    }
+  ]
+}

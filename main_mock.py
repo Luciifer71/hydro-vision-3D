@@ -7,10 +7,10 @@ from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 
-# Import our new depth engine module
 from src.perception.depth_engine import DepthEngine
+from src.spatial.geo_projector import GeoProjector
 
-app = FastAPI(title="Hydro-Vision 3D API + Depth Anything V2")
+app = FastAPI(title="Hydro-Vision 3D Full Production Backend")
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,83 +20,118 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Global depth engine instance on GPU
+# Initialize Engines
 depth_engine = DepthEngine(device="cuda:0")
+geo_projector = GeoProjector(
+    image_width=1920, image_height=1080, hfov_deg=84.0
+)
 
 
 @app.get("/")
 def read_root():
     return {
         "status": "online",
-        "engine": "Depth Anything V2 (CUDA Active)",
-        "gpu": "RTX 4060",
+        "engines": ["Depth-Anything-V2", "Photogrammetric-GeoProjector"],
+        "device": "RTX 4060 CUDA",
     }
+
 
 @app.get("/api/stream/start")
 @app.post("/api/stream/start")
 def start_stream():
-    """Handles React UI request to initiate stream feed."""
     return {"status": "success", "message": "Live stream pipeline started"}
 
 
 @app.get("/api/stream/stop")
 @app.post("/api/stream/stop")
 def stop_stream():
-    """Handles React UI request to stop stream feed."""
-    return {"status": "success", "message": "Live stream pipeline paused"}
-
-@app.post("/api/depth/analyze")
-async def analyze_frame_depth(file: UploadFile = File(...)):
-    """API Endpoint: Receives drone frame, computes depth map + pothole volume."""
-    contents = await file.read()
-    image = Image.open(io.BytesIO(contents)).convert("RGB")
-
-    # Run CUDA Inference
-    depth_array, b64_depth_map = depth_engine.predict_depth(image)
-
-    # Calculate Volume for sample pothole bounding box [x1, y1, x2, y2]
-    h, w = depth_array.shape
-    sample_bbox = [int(w * 0.3), int(h * 0.3), int(w * 0.7), int(h * 0.7)]
-    volume_m3 = depth_engine.calculate_hazard_volume(
-        depth_array, sample_bbox, altitude_m=25.0
-    )
-
-    return {
-        "status": "success",
-        "volume_m3": volume_m3,
-        "depth_map_b64": f"data:image/png;base64,{b64_depth_map}",
-        "metrics": {"model": "Depth-Anything-V2-Small", "device": "RTX 4060 CUDA"},
-    }
+    return {"status": "success", "message": "Live stream pipeline stopped"}
 
 
 @app.websocket("/ws/live-stream")
 async def websocket_endpoint(websocket: WebSocket):
     await websocket.accept()
     frame_count = 0
+
+    # Base drone telemetry position (Alkapuri, Vadodara)
+    drone_lat = 22.30720
+    drone_lon = 73.18200
+
     try:
         while True:
             frame_count += 1
-            mock_payload = {
+
+            # Simulate drone flight movement (North-East path)
+            current_drone_lat = drone_lat + (frame_count * 0.00001)
+            current_drone_lon = drone_lon + (frame_count * 0.000012)
+            altitude = 25.0
+            heading = 45.0  # Flight heading (NE)
+
+            # Sample detection bounding box centers in image frame (1920x1080)
+            pothole_bbox_center = (960 + random.randint(-100, 100), 540 + random.randint(-50, 50))
+            waterlog_bbox_center = (1200 + random.randint(-50, 50), 300 + random.randint(-30, 30))
+
+            # Run Photogrammetric Spatial Projection to get exact WGS84 GPS coords
+            pothole_geo = geo_projector.pixel_to_gps(
+                pixel_x=pothole_bbox_center[0],
+                pixel_y=pothole_bbox_center[1],
+                drone_lat=current_drone_lat,
+                drone_lon=current_drone_lon,
+                altitude_m=altitude,
+                pitch_deg=-90.0,
+                yaw_deg=heading,
+            )
+
+            waterlog_geo = geo_projector.pixel_to_gps(
+                pixel_x=waterlog_bbox_center[0],
+                pixel_y=waterlog_bbox_center[1],
+                drone_lat=current_drone_lat,
+                drone_lon=current_drone_lon,
+                altitude_m=altitude,
+                pitch_deg=-90.0,
+                yaw_deg=heading,
+            )
+
+            payload = {
                 "timestamp": datetime.now().strftime("%H:%M:%S"),
                 "frame_id": frame_count,
                 "telemetry": {
-                    "altitude": 25.0,
-                    "battery": 87,
-                    "satellites": 12,
+                    "latitude": round(current_drone_lat, 7),
+                    "longitude": round(current_drone_lon, 7),
+                    "altitude": altitude,
+                    "heading": heading,
+                    "speed_ms": 5.4,
+                    "battery": max(100 - (frame_count // 20), 10),
+                    "satellites": 14,
                     "mode": "3D_MAPPING",
                 },
                 "hazards_summary": {
-                    "total_count": 3,
+                    "total_count": 2,
                     "active_risk": "CRITICAL",
-                    "total_area_m2": 129.5,
+                    "total_area_m2": 116.7,
                 },
-                "depth_analysis": {
-                    "status": "ACTIVE",
-                    "model": "Depth-Anything-V2",
-                    "estimated_volume_m3": round(0.42 * (1 + (frame_count % 5) * 0.1), 3),
-                },
+                "detections": [
+                    {
+                        "track_id": 101,
+                        "class": "Pothole",
+                        "confidence": 0.94,
+                        "area_m2": 82.5,
+                        "severity": "CRITICAL",
+                        "gps": pothole_geo,
+                    },
+                    {
+                        "track_id": 102,
+                        "class": "Waterlogging",
+                        "confidence": 0.89,
+                        "area_m2": 34.2,
+                        "severity": "HIGH",
+                        "gps": waterlog_geo,
+                    },
+                ],
             }
-            await websocket.send_text(json.dumps(mock_payload))
-            await asyncio.sleep(1.5)
+
+            await websocket.send_text(json.dumps(payload))
+            await asyncio.sleep(1.0)
+
     except WebSocketDisconnect:
-        print("[INFO] React Client Disconnected")
+        print("[INFO] React GCS Client Disconnected")

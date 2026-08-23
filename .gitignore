@@ -32,6 +32,7 @@ data/multiclass_dataset/raw_downloads/*
 data/multiclass_dataset/images/*
 data/multiclass_dataset/labels/*
 data/raw_videos/*
+data/external_datasets/
 
 # Exceptions (Files explicitly tracked in Git)
 !data/raw_videos/master_video.mp4

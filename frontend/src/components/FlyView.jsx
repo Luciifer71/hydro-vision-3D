@@ -5,21 +5,25 @@ import AttitudeCard from './AttitudeCard.jsx';
 import HazardFeed from './HazardFeed.jsx';
 import MissionStatusPanel from './MissionStatusPanel.jsx';
 import ErrorBoundary from './ErrorBoundary.jsx';
+import { useLiveHazards } from '../hooks/useLiveHazards';
 
 export default function FlyView() {
+  // 🟢 1. Extract telemetry and video controls from store
   const {
-    telemetry,
-    currentState,
-    hazards,
-    connectionStatus,
-    streamRunning,
-    videoPath,
+    telemetry = { pitch: 0, roll: 0 },
+    currentState = {},
+    streamRunning = false,
+    videoPath = '/sample-drone.mp4',
     updateLocalVideoFrame,
-  } = useStore();
+  } = useStore() || {};
 
-  const riskLevel = currentState?.summary?.overall_risk || 'MODERATE';
-  const activeHazards = currentState?.summary?.active_hazards || hazards.length || 3;
-  const totalArea = currentState?.summary?.total_area_m2 || 18.4;
+  // 🟢 2. Extract live database hazards and volume metrics
+  const { hazards = [], totalMarkers = 0, totalVolume = 0 } = useLiveHazards() || {};
+
+  // 🟢 3. Derived UI metrics with safe fallbacks
+  const riskLevel = currentState?.summary?.overall_risk || (totalVolume > 2.0 ? 'CRITICAL' : 'LOW');
+  const activeHazards = totalMarkers || hazards.length;
+  const totalArea = Number(totalVolume) || 0;
   const riskScore = currentState?.summary?.risk_score ? currentState.summary.risk_score * 25 : 50;
   const isCritical = riskLevel === 'CRITICAL';
   const frameId = currentState?.frame_id ?? 0;
@@ -30,7 +34,7 @@ export default function FlyView() {
       <div className="video-panel">
         <ErrorBoundary name="Video Player">
           <VideoPlayer
-            src={videoPath || '/sample-drone.mp4'}
+            src={videoPath}
             onFrameUpdate={updateLocalVideoFrame}
           />
         </ErrorBoundary>
@@ -43,7 +47,7 @@ export default function FlyView() {
             totalArea={totalArea}
             riskScore={riskScore}
             isCritical={isCritical}
-            streamRunning={streamRunning || true}
+            streamRunning={streamRunning}
             frameId={frameId}
           />
         </ErrorBoundary>
@@ -52,11 +56,17 @@ export default function FlyView() {
       {/* ── Right Panel (Attitude, Hazard Feed, Mission Status) ── */}
       <div className="fly-right">
         <ErrorBoundary name="Attitude Card">
-          <AttitudeCard pitch={telemetry.pitch} roll={telemetry.roll} />
+          <AttitudeCard 
+            pitch={telemetry?.pitch || 0} 
+            roll={telemetry?.roll || 0} 
+          />
         </ErrorBoundary>
 
         <ErrorBoundary name="Hazard Feed">
-          <HazardFeed hazards={hazards} activeHazards={activeHazards} />
+          <HazardFeed 
+            hazards={hazards} 
+            activeHazards={activeHazards} 
+          />
         </ErrorBoundary>
 
         <ErrorBoundary name="Mission Status Panel">

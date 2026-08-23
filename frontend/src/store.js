@@ -109,6 +109,7 @@ export const useStore = create((set, get) => ({
   currentPage: 'dashboard',
   streamRunning: false,
   videoPath: '/sample-drone.mp4',
+
   showCriticalAlert: false,
 
   settings: {
@@ -135,6 +136,7 @@ export const useStore = create((set, get) => ({
     set({
       feedMode: 'live',
       videoPath: '/sample-drone.mp4',
+
       streamRunning: true,
     });
     // Trigger backend live stream pipeline reset/start

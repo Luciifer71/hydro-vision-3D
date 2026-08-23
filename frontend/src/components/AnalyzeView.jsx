@@ -5,6 +5,7 @@ import {
 } from 'chart.js';
 import { useStore, CONFIG } from '../store.js';
 import HazardMap from './HazardMap.jsx';
+import { useLiveHazards } from '../hooks/useLiveHazards'; // 🟢 Live Supabase Hook
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, BarElement, Title, Tooltip, Legend, Filler);
 
@@ -41,11 +42,18 @@ const CHART_OPTS = {
 
 function severityFromArea(a) {
   a = Number(a) || 0;
-  if (a >= 75) return 'CRITICAL'; if (a >= 25) return 'HIGH'; if (a >= 5) return 'MODERATE'; return 'LOW';
+  if (a >= 0.3) return 'CRITICAL'; 
+  if (a >= 0.15) return 'HIGH'; 
+  if (a >= 0.05) return 'MODERATE'; 
+  return 'LOW';
 }
 
 export default function AnalyzeView() {
-  const { hazards, timelineHistory, riskHistory, currentState } = useStore();
+  // 🟢 1. Local State for UI histories
+  const { timelineHistory, riskHistory, currentState } = useStore();
+  
+  // 🟢 2. Live Data from Supabase Cloud
+  const { hazards } = useLiveHazards(); 
 
   const timelineData = {
     labels: timelineHistory.map(d => d.time),
@@ -57,14 +65,25 @@ export default function AnalyzeView() {
   };
 
   const sevCounts = { LOW: 0, MODERATE: 0, HIGH: 0, CRITICAL: 0 };
-  hazards.forEach(h => { const s = h.severity || severityFromArea(h.surface_area_m2); if (sevCounts[s] !== undefined) sevCounts[s]++; });
+  hazards.forEach(h => { 
+    const s = severityFromArea(h.estimated_volume_m3); 
+    if (sevCounts[s] !== undefined) sevCounts[s]++; 
+  });
+  
   const sevData = {
     labels: ['Low', 'Moderate', 'High', 'Critical'],
     datasets: [{ data: [sevCounts.LOW, sevCounts.MODERATE, sevCounts.HIGH, sevCounts.CRITICAL], backgroundColor: ['#00cc00', '#ffbb00', '#ff8800', '#cc0000'], borderWidth: 0 }],
   };
 
   const typeCounts = { pothole: 0, water_body: 0, crack: 0, flooding: 0 };
-  hazards.forEach(h => { if (typeCounts[h.type] !== undefined) typeCounts[h.type]++; });
+  hazards.forEach(h => { 
+    const typeStr = h.class_name || '';
+    if (typeStr.includes('pothole')) typeCounts.pothole++;
+    else if (typeStr.includes('water') || typeStr.includes('drain')) typeCounts.water_body++;
+    else if (typeStr.includes('crack')) typeCounts.crack++;
+    else typeCounts.flooding++;
+  });
+  
   const typeData = {
     labels: ['Pothole', 'Water Body', 'Crack', 'Flooding'],
     datasets: [{ data: [typeCounts.pothole, typeCounts.water_body, typeCounts.crack, typeCounts.flooding], backgroundColor: ['rgba(204,0,0,0.7)', 'rgba(255,187,0,0.7)', 'rgba(255,136,0,0.7)', 'rgba(170,85,255,0.7)'], borderColor: ['#cc0000', '#ffbb00', '#ff8800', '#aa55ff'], borderWidth: 1, borderRadius: 3 }],
@@ -75,8 +94,9 @@ export default function AnalyzeView() {
     datasets: [{ label: 'Risk Score', data: riskHistory.map(d => d.score), borderColor: '#ff8800', backgroundColor: 'rgba(255,136,0,0.1)', borderWidth: 2, fill: true, tension: 0.4, pointRadius: 0 }],
   };
 
-  const riskLevel = currentState?.summary?.overall_risk || 'LOW';
-  const totalArea = currentState?.summary?.total_area_m2 || 0;
+  // Derive total live volume
+  const totalArea = hazards.reduce((acc, curr) => acc + (curr.estimated_volume_m3 || 0), 0);
+  const riskLevel = totalArea > 2.0 ? 'CRITICAL' : (totalArea > 0.5 ? 'HIGH' : 'LOW');
   const riskScore = currentState?.summary?.risk_score || 1;
 
   const sevColors = { LOW: '#00cc00', MODERATE: '#ffbb00', HIGH: '#ff8800', CRITICAL: '#cc0000' };
@@ -86,8 +106,8 @@ export default function AnalyzeView() {
       {/* KPI Row */}
       <div className="kpi-grid">
         {[
-          { label: 'Active Hazards', value: currentState?.summary?.active_hazards || 0 },
-          { label: 'Total Affected Area', value: `${totalArea.toFixed(1)} m²` },
+          { label: 'Active Hazards', value: hazards.length },
+          { label: 'Total Estimated Volume', value: `${totalArea.toFixed(2)} m³` },
           { label: 'Overall Risk', value: riskLevel, color: sevColors[riskLevel] },
           { label: 'Active Alerts', value: currentState?.summary?.alert_count || 0 },
         ].map(({ label, value, color }) => (
@@ -163,25 +183,30 @@ export default function AnalyzeView() {
         <div className="card">
           <div className="card-header">
             <span className="card-title">Live Hazard Feed</span>
-            <span className="card-badge badge-live">● Streaming</span>
+            <span className="card-badge badge-live">● Streaming Cloud Data</span>
           </div>
           <div className="table-wrap" style={{ maxHeight: 380 }}>
             <table className="data-table">
-              <thead><tr><th>Time</th><th>Type</th><th>Location</th><th>Area m²</th><th>Conf.</th><th>Severity</th></tr></thead>
+              <thead><tr><th>Time</th><th>Type</th><th>Location</th><th>Volume m³</th><th>Conf.</th><th>Severity</th></tr></thead>
               <tbody>
-                {[...hazards].sort((a, b) => (b.surface_area_m2 || 0) - (a.surface_area_m2 || 0)).slice(0, 15).map((h, i) => {
-                  const area = Number(h.surface_area_m2) || 0;
-                  const sev = (h.severity || 'LOW').toLowerCase();
-                  const lat = h.location?.latitude, lon = h.location?.longitude;
-                  const t = h.timestamp ? new Date(h.timestamp).toLocaleTimeString('en-US', { hour12: false }) : '--:--:--';
+                {[...hazards].sort((a, b) => (b.estimated_volume_m3 || 0) - (a.estimated_volume_m3 || 0)).slice(0, 15).map((h, i) => {
+                  const vol = Number(h.estimated_volume_m3) || 0;
+                  const sev = severityFromArea(vol).toLowerCase();
+                  const lat = h.latitude;
+                  const lon = h.longitude;
+                  const t = h.last_detected ? new Date(h.last_detected).toLocaleTimeString('en-US', { hour12: false }) : '--:--:--';
+                  
+                  // Map raw class name to formatted label
+                  const formattedType = (h.class_name || 'unknown').replace('_', ' ').toUpperCase();
+
                   return (
-                    <tr key={`${h.track_id}-${i}`}>
+                    <tr key={`${h.hazard_id}-${i}`}>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: '#666' }}>{t}</td>
-                      <td><span className={`type-badge ${h.type}`}>{CONFIG.TYPE_ICONS[h.type]} {CONFIG.TYPE_LABELS[h.type]}</span></td>
+                      <td><span className="type-badge" style={{ backgroundColor: '#222' }}>{formattedType}</span></td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: '#666' }}>
                         {typeof lat === 'number' ? lat.toFixed(4) : '—'}, {typeof lon === 'number' ? lon.toFixed(4) : '—'}
                       </td>
-                      <td>{area.toFixed(2)}</td>
+                      <td>{vol.toFixed(3)}</td>
                       <td>{((h.confidence ?? 1) * 100).toFixed(1)}%</td>
                       <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
                     </tr>
@@ -204,4 +229,4 @@ export default function AnalyzeView() {
       </div>
     </div>
   );
-}
+}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
