@@ -45,9 +45,9 @@ export default function StreamPage() {
                 alignItems: 'center',
                 justifyContent: 'center',
                 gap: 8,
-                background: isLive ? 'linear-gradient(135deg, #00cc00, #009900)' : undefined,
-                color: isLive ? '#1a1a1a' : '#00cc00',
-                borderColor: '#00cc00'
+                background: isLive ? 'linear-gradient(135deg, #10b981, #059669)' : undefined,
+                color: isLive ? '#1a1a1a' : '#10b981',
+                borderColor: '#10b981'
               }}
             >
               <span>🔴</span> Live Drone Feed

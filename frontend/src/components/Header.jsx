@@ -34,10 +34,10 @@ function SensorIcon({ label, active }) {
       }}
     >
       <svg width="18" height="18" viewBox="0 0 18 18" fill="none">
-        <circle cx="9" cy="9" r="7" stroke={active ? '#00cc00' : '#555'} strokeWidth="1.5" fill="none" />
-        <circle cx="9" cy="9" r="2.5" fill={active ? '#00cc00' : '#555'} />
+        <circle cx="9" cy="9" r="7" stroke={active ? '#10b981' : '#555'} strokeWidth="1.5" fill="none" />
+        <circle cx="9" cy="9" r="2.5" fill={active ? '#10b981' : '#555'} />
       </svg>
-      <span style={{ fontSize: '0.5rem', color: active ? '#00cc00' : '#555', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' }}>
+      <span style={{ fontSize: '0.5rem', color: active ? '#10b981' : '#555', fontWeight: 700, letterSpacing: 1, textTransform: 'uppercase' }}>
         {label}
       </span>
     </div>
@@ -62,7 +62,7 @@ export default function Header() {
   const isDashboard = currentPage === 'dashboard';
   const isLive = feedMode === 'live';
   const battPct = Math.round(telemetry.battery);
-  const battColor = battPct > 40 ? '#00cc00' : battPct > 20 ? '#ffbb00' : '#cc0000';
+  const battColor = battPct > 40 ? '#10b981' : battPct > 20 ? '#ffbb00' : '#cc0000';
 
   const handleFileChange = (e) => {
     const file = e.target.files?.[0];
@@ -143,7 +143,7 @@ export default function Header() {
             onClick={switchToLiveFeed}
             title="Return to real-time live drone flight feed and restore telemetry"
             style={{
-              background: 'linear-gradient(135deg, #00cc00, #009900)',
+              background: 'linear-gradient(135deg, #10b981, #059669)',
               color: '#1a1a1a',
               fontWeight: 800,
               padding: '4px 12px',
@@ -154,7 +154,7 @@ export default function Header() {
               alignItems: 'center',
               gap: 6,
               border: 'none',
-              boxShadow: '0 0 8px rgba(0, 204, 0, 0.4)',
+              boxShadow: '0 0 8px rgba(16, 185, 129, 0.4)',
             }}
           >
             <span style={{ fontSize: '0.85rem' }}>🔴</span>
@@ -163,10 +163,10 @@ export default function Header() {
         ) : (
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 5,
-            padding: '3px 8px', borderRadius: 4, background: 'rgba(0,204,0,0.1)',
-            border: '1px solid rgba(0,204,0,0.3)', color: '#00cc00', fontSize: '0.68rem', fontWeight: 800
+            padding: '3px 8px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.12)',
+            border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', fontSize: '0.68rem', fontWeight: 800
           }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#00cc00', display: 'inline-block' }} />
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
             LIVE DRONE FEED
           </div>
         )}
@@ -218,7 +218,7 @@ export default function Header() {
           </button>
         ) : (
           <button className="btn" onClick={connect}
-            style={{ background: '#00cc00', color: '#1a1a1a', padding: '4px 12px', fontSize: '0.7rem', borderRadius: 4 }}>
+            style={{ background: '#10b981', color: '#1a1a1a', padding: '4px 12px', fontSize: '0.7rem', borderRadius: 4 }}>
             Connect
           </button>
         )}

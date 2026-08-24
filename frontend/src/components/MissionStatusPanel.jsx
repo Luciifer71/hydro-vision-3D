@@ -3,7 +3,7 @@
  */
 export default function MissionStatusPanel({ streamRunning, hazards, totalArea, currentState }) {
   const mode = streamRunning ? 'MAPPING' : 'STANDBY';
-  const modeColor = streamRunning ? '#00cc00' : '#666';
+  const modeColor = streamRunning ? '#10b981' : '#666';
   const totalHazards = currentState?.summary?.total_cumulative_hazards || hazards.length;
   const actionText = currentState?.summary?.action || 'Monitor routine conditions.';
 

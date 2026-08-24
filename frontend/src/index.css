@@ -2,7 +2,7 @@
 :root{
   --bg-base:#1a1a1a;--bg-surface:#242424;--bg-elevated:#2d2d2d;--bg-card:#303030;
   --border:#444;--border-glow:#ffbb0033;
-  --amber:#ffbb00;--amber-dim:#ffbb0018;--green:#00cc00;--warning:#ffbb00;--orange:#ff8800;--danger:#cc0000;--purple:#aa55ff;
+  --amber:#ffbb00;--amber-dim:#ffbb0018;--green:#10b981;--warning:#ffbb00;--orange:#ff8800;--danger:#cc0000;--purple:#aa55ff;
   --cyan:#ffbb00;--cyan-dim:#ffbb0018;
   --text-primary:#e0e0e0;--text-muted:#999;--text-faint:#666;
   --font-mono:'JetBrains Mono',monospace;--font-display:'Segoe UI',sans-serif;
@@ -38,7 +38,7 @@ html,body,#root{height:100%;width:100%;overflow:hidden;background:var(--bg-base)
 .header-right{display:flex;align-items:center;gap:12px}
 .header-time{font-family:var(--font-mono);font-size:0.82rem;color:var(--text-muted)}
 .conn-badge{display:flex;align-items:center;gap:5px;padding:5px 12px;border-radius:4px;font-size:0.78rem;font-weight:700;letter-spacing:1px;border:1px solid}
-.conn-badge.live{background:#00cc0018;color:var(--green);border-color:#00cc0033}
+.conn-badge.live{background:rgba(16, 185, 129, 0.12);color:var(--green);border-color:rgba(16, 185, 129, 0.3)}
 .conn-badge.connecting{background:#ffbb0018;color:var(--warning);border-color:#ffbb0033}
 .conn-badge.disconnected,.conn-badge.error,.conn-badge.reconnecting{background:#cc000018;color:var(--danger);border-color:#cc000033}
 .avatar{width:32px;height:32px;border-radius:4px;background:var(--amber);display:flex;align-items:center;justify-content:center;font-size:0.72rem;font-weight:700;color:#1a1a1a;cursor:pointer}
@@ -102,7 +102,7 @@ html,body,#root{height:100%;width:100%;overflow:hidden;background:var(--bg-base)
 .card-header{display:flex;align-items:center;justify-content:space-between;padding:10px 14px;border-bottom:1px solid #3a3a3a;background:#303030}
 .card-title{font-size:0.85rem;font-weight:700;color:#ccc;letter-spacing:.5px;display:flex;align-items:center;gap:6px}
 .card-badge{font-size:0.68rem;font-weight:700;padding:3px 8px;border-radius:3px;letter-spacing:.5px}
-.badge-live{background:#00cc0018;color:var(--green);border:1px solid #00cc0033}
+.badge-live{background:rgba(16, 185, 129, 0.12);color:var(--green);border:1px solid rgba(16, 185, 129, 0.3)}
 .badge-info{background:#ffbb0018;color:var(--amber);border:1px solid #ffbb0033}
 .card-body{padding:12px}
 
@@ -126,6 +126,8 @@ html,body,#root{height:100%;width:100%;overflow:hidden;background:var(--bg-base)
 .map-wrap{height:400px;border-radius:0 0 4px 4px;overflow:hidden}
 .map-wrap.full{height:calc(100vh - 200px)}
 .leaflet-container{background:#1a1a1a!important}
+.leaflet-popup-content-wrapper{background:#ffffff!important;color:#1e293b!important;border-radius:6px!important;box-shadow:0 4px 16px rgba(0,0,0,0.4)!important}
+.leaflet-popup-tip{background:#ffffff!important}
 
 /* Table */
 .table-wrap{overflow-x:auto;overflow-y:auto;max-height:400px}
@@ -139,7 +141,7 @@ html,body,#root{height:100%;width:100%;overflow:hidden;background:var(--bg-base)
 .type-badge.crack{background:#ff880018;color:#ffaa44;border:1px solid #ff880030}
 .type-badge.flooding{background:#aa55ff18;color:#cc88ff;border:1px solid #aa55ff30}
 .sev-badge{display:inline-flex;padding:3px 8px;border-radius:3px;font-size:0.68rem;font-weight:700;letter-spacing:.5px}
-.sev-badge.low{background:#00cc0018;color:var(--green);border:1px solid #00cc0030}
+.sev-badge.low{background:rgba(16, 185, 129, 0.12);color:var(--green);border:1px solid rgba(16, 185, 129, 0.3)}
 .sev-badge.moderate{background:#ffbb0018;color:var(--warning);border:1px solid #ffbb0030}
 .sev-badge.high{background:#ff880018;color:var(--orange);border:1px solid #ff880030}
 .sev-badge.critical{background:#cc000018;color:var(--danger);border:1px solid #cc000030}
@@ -201,7 +203,7 @@ html,body,#root{height:100%;width:100%;overflow:hidden;background:var(--bg-base)
 
 /* API table */
 .method-badge{padding:3px 7px;border-radius:3px;font-size:0.68rem;font-weight:700}
-.method-badge.GET{background:#00cc0018;color:var(--green);border:1px solid #00cc0030}
+.method-badge.GET{background:rgba(16, 185, 129, 0.12);color:var(--green);border:1px solid rgba(16, 185, 129, 0.3)}
 .method-badge.WS{background:#aa55ff18;color:var(--purple);border:1px solid #aa55ff30}
 .method-badge.POST{background:#ffbb0018;color:var(--amber);border:1px solid #ffbb0030}
 

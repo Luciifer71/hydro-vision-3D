@@ -9,7 +9,7 @@ export default function BottomBar() {
     <div className="bottom-bar">
       <div className="bottom-bar-item">
         <span className="label">Status:</span>
-        <span className="value" style={{ color: connectionStatus === 'LIVE' ? '#00cc00' : '#cc0000' }}>
+        <span className="value" style={{ color: connectionStatus === 'LIVE' ? '#10b981' : '#cc0000' }}>
           {connectionStatus}
         </span>
       </div>
@@ -35,7 +35,7 @@ export default function BottomBar() {
       </div>
       <div className="bottom-bar-item">
         <span className="label">BATT:</span>
-        <span className="value" style={{ color: telemetry.battery > 40 ? '#00cc00' : telemetry.battery > 20 ? '#ffbb00' : '#cc0000' }}>
+        <span className="value" style={{ color: telemetry.battery > 40 ? '#10b981' : telemetry.battery > 20 ? '#ffbb00' : '#cc0000' }}>
           {Math.round(telemetry.battery)}%
         </span>
       </div>

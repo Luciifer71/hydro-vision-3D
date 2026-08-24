@@ -12,7 +12,16 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
   const [isPlaying, setIsPlaying] = useState(false);
   const [hasError, setHasError] = useState(false);
   const [videoInfo, setVideoInfo] = useState(null);
-  const { switchToLiveFeed, feedMode } = useStore();
+  const { switchToLiveFeed, feedMode, uploadVideo } = useStore();
+  const isLiveFeed = feedMode === 'live';
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = (e) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      uploadVideo(file);
+    }
+  };
 
   // Extract metadata once video is loaded
   const handleLoadedMetadata = useCallback(() => {
@@ -53,19 +62,30 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
     };
   }, [tick]);
 
-  // Auto-reload & play when video src updates (e.g., file upload)
+  // Reset error state whenever src changes so new video uploads mount the video element
   useEffect(() => {
+    setHasError(false);
+  }, [src]);
+
+  // Auto-reload & play when video src updates or error clears
+  useEffect(() => {
+    if (hasError) return;
     const v = videoRef.current;
     if (!v) return;
-    setHasError(false);
+    
     v.load();
-    v.play().then(() => {
-      setIsPlaying(true);
-      onStatusChange?.('PLAYING');
-    }).catch((err) => {
-      console.warn('Playback notice:', err);
-    });
-  }, [src, onStatusChange]);
+    const playPromise = v.play();
+    if (playPromise !== undefined) {
+      playPromise
+        .then(() => {
+          setIsPlaying(true);
+          onStatusChange?.('PLAYING');
+        })
+        .catch((err) => {
+          console.warn('Auto-playback notice:', err);
+        });
+    }
+  }, [src, hasError, onStatusChange]);
 
   const handlePlay = () => {
     const v = videoRef.current;
@@ -114,21 +134,59 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
   };
 
   if (hasError) {
+    if (isLiveFeed) {
+      return (
+        <div className="video-placeholder" style={{ gap: 14, background: 'linear-gradient(135deg, #181414, #0d0d10)', padding: 24, textAlign: 'center' }}>
+          <div style={{ fontSize: '2.5rem', marginBottom: -4 }}>📡</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.1rem', color: '#ffbb00', fontWeight: 800, letterSpacing: '1px' }}>
+            NO LIVE DRONE FEED SIGNAL
+          </div>
+          <div className="video-label" style={{ maxWidth: '80%', fontSize: '0.82rem', color: '#bbb', lineHeight: 1.6 }}>
+            Live drone video stream is currently offline or unreachable. Please verify that the FastAPI backend service is running, or upload a pre-recorded flight video for AI analysis.
+          </div>
+          <input
+            type="file"
+            ref={fileInputRef}
+            accept="video/*"
+            style={{ display: 'none' }}
+            onChange={handleFileChange}
+          />
+          <div style={{ display: 'flex', gap: 12, marginTop: 6, flexWrap: 'wrap', justifyContent: 'center' }}>
+            <button
+              className="btn"
+              onClick={() => { setHasError(false); switchToLiveFeed(); }}
+              style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#1a1a1a', fontWeight: 800, padding: '8px 18px' }}
+            >
+              ⚡ Retry Live Feed
+            </button>
+            <button
+              className="btn btn-outline"
+              onClick={() => fileInputRef.current?.click()}
+              style={{ borderColor: 'var(--amber)', color: 'var(--amber)', fontWeight: 700, padding: '8px 18px' }}
+            >
+              📁 Upload Flight Video
+            </button>
+          </div>
+        </div>
+      );
+    }
+
     return (
-      <div className="video-placeholder" style={{ gap: 14, background: 'linear-gradient(135deg, #1f1a1a, #111111)' }}>
+      <div className="video-placeholder" style={{ gap: 14, background: 'linear-gradient(135deg, #1f1a1a, #111111)', padding: 24, textAlign: 'center' }}>
+        <div style={{ fontSize: '2.5rem', marginBottom: -4 }}>⚠️</div>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.1rem', color: '#ffbb00', fontWeight: 800 }}>
           VIDEO FORMAT INCOMPATIBLE
         </div>
-        <div className="video-label" style={{ maxWidth: '85%', textAlign: 'center', fontSize: '0.82rem', color: '#ccc', lineHeight: 1.5 }}>
+        <div className="video-label" style={{ maxWidth: '85%', fontSize: '0.82rem', color: '#ccc', lineHeight: 1.5 }}>
           The uploaded file format/codec is not natively readable by your web browser's HTML5 video engine (H.265 / MKV / AVI).
         </div>
-        <div style={{ display: 'flex', gap: 10, marginTop: 4 }}>
+        <div style={{ display: 'flex', gap: 10, marginTop: 4, justifyContent: 'center' }}>
           <button
             className="btn btn-primary"
             onClick={handleSwitchToSample}
-            style={{ background: 'var(--amber)', color: '#1a1a1a', fontWeight: 700 }}
+            style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#1a1a1a', fontWeight: 800 }}
           >
-            ▶ Switch to Live Drone Feed
+            🔴 Switch to Live Drone Feed
           </button>
           <button
             className="btn btn-outline"

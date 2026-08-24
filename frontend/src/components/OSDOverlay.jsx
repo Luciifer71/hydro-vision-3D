@@ -33,7 +33,7 @@ export default function OSDOverlay({ telemetry, riskLevel, activeHazards, totalA
 
       {/* REC Badge */}
       {streamRunning && (
-        <div className="rec-badge" style={{ top: 12, left: isLiveFeed ? 240 : 20, transform: 'none' }}>
+        <div className="rec-badge" style={{ top: 12, left: isLiveFeed ? 130 : 185, transform: 'none' }}>
           <div className="rec-dot" />
           {isLiveFeed ? 'LIVE REC' : 'VIDEO ANALYZER'}
         </div>

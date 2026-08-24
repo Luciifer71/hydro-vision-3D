@@ -32,10 +32,18 @@ export default function MapPage() {
         <div className="card-header"><span className="card-title">Map Legend</span></div>
         <div className="card-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
-            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: 1 }}>HAZARD TYPES</div>
-            {[['#ef4444','Pothole'],['#00d4ff','Water Body'],['#f59e0b','Crack'],['#a855f7','Flooding']].map(([c,l]) => (
-              <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                <div style={{ width: 10, height: 10, borderRadius: '50%', background: c }} />
+            <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: 1 }}>HAZARD TYPES (GeoJSON)</div>
+            {[
+              ['#ef4444','Pothole (Dry)'],
+              ['#f59e0b','Pothole (Waterlogged)'],
+              ['#3b82f6','Waterlogging Area'],
+              ['#dc2626','Open Manhole'],
+              ['#eab308','Crack'],
+              ['#8b5cf6','Drainage Overflow'],
+              ['#f97316','Damaged Footpath'],
+            ].map(([c,l]) => (
+              <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 5 }}>
+                <div style={{ width: 10, height: 10, borderRadius: '50%', background: c, flexShrink: 0 }} />
                 <span style={{ fontSize: '0.78rem' }}>{l}</span>
               </div>
             ))}

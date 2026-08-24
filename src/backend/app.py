@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import List, Dict, Any
 
 from fastapi import (
-    FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException
+    FastAPI, WebSocket, WebSocketDisconnect, BackgroundTasks, HTTPException, UploadFile, File
 )
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -394,6 +394,38 @@ async def debug_video_path():
     }
 
 
+@app.post("/api/upload-video")
+async def upload_video_file(file: UploadFile = File(...)):
+    """Receives uploaded drone video, saves it to data/raw_videos, and returns accessibility details."""
+    upload_dir = os.path.join(BASE_DIR, "data", "raw_videos")
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    filename = f"upload_{uuid.uuid4().hex[:8]}_{file.filename}"
+    filepath = os.path.join(upload_dir, filename)
+    
+    with open(filepath, "wb") as f:
+        content = await file.read()
+        f.write(content)
+        
+    return {
+        "status": "success",
+        "message": "Video uploaded successfully",
+        "filename": filename,
+        "video_path": filepath,
+        "url": f"/api/videos/{filename}"
+    }
+
+
+@app.get("/api/videos/{filename}")
+async def get_uploaded_video(filename: str):
+    """Serves uploaded video file with proper video media headers."""
+    upload_dir = os.path.join(BASE_DIR, "data", "raw_videos")
+    filepath = os.path.join(upload_dir, filename)
+    if os.path.isfile(filepath):
+        return FileResponse(filepath, media_type="video/mp4")
+    raise HTTPException(status_code=404, detail="Video file not found.")
+
+
 @app.get("/api/stream/start")
 async def start_stream_trigger(background_tasks: BackgroundTasks, video_path: str = None):
     """Triggers stream processing in a background task. Defaults to the
@@ -406,6 +438,17 @@ async def start_stream_trigger(background_tasks: BackgroundTasks, video_path: st
             video_path = resolve_master_video_path()
         except FileNotFoundError as e:
             raise HTTPException(status_code=404, detail=str(e))
+    else:
+        # Resolve full path if filename or relative path is passed
+        upload_dir = os.path.join(BASE_DIR, "data", "raw_videos")
+        candidate_path = os.path.join(upload_dir, video_path)
+        if os.path.isfile(candidate_path):
+            video_path = candidate_path
+        elif not os.path.isfile(video_path):
+            try:
+                video_path = resolve_master_video_path()
+            except FileNotFoundError as e:
+                raise HTTPException(status_code=404, detail=str(e))
 
     background_tasks.add_task(run_stream_loop, video_path)
     return {"message": "Stream processing started successfully.", "video_path": video_path}
@@ -429,6 +472,19 @@ async def get_hazards():
 
 @app.get("/api/hazards/geojson")
 async def get_hazards_geojson():
+    possible_paths = [
+        os.path.join(BASE_DIR, "data", "gis", "hazards.geojson"),
+        os.path.join(BASE_DIR, "hazards.geojson"),
+        os.path.join(BASE_DIR, "frontend", "public", "hazards.geojson"),
+    ]
+    for path in possible_paths:
+        if os.path.isfile(path):
+            try:
+                with open(path, "r") as f:
+                    return json.load(f)
+            except Exception as e:
+                print(f"Notice: Error reading {path}: {e}")
+
     features = []
     for h in latest_system_state.get("hazards", []):
         if "location" in h:
@@ -442,13 +498,10 @@ async def get_hazards_geojson():
                     "hazard_id": h.get("hazard_id"),
                     "track_id": h.get("track_id"),
                     "class_name": h.get("type"),
-                    "surface_area_m2": h.get("surface_area_m2"),
+                    "estimated_volume_m3": h.get("estimated_volume_m3", 0.05),
+                    "detections_count": h.get("detections_count", 1),
                     "confidence": h.get("confidence"),
                     "severity": h.get("severity", "LOW"),
-                    "priority_score": h.get("priority_score", 10),
-                    "zone": h.get("zone", "Unassigned"),
-                    "timestamp": h.get("timestamp"),
-                    "visual_evidence_url": h.get("visual_evidence_url"),
                     "status": h.get("status", "OPEN")
                 }
             }

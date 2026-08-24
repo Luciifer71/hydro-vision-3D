@@ -25,9 +25,42 @@ const CONFIG = {
   CHART_HISTORY: 24,
   MAX_ALERTS: 15,
   EMA_ALPHA: 0.3,
-  TYPE_LABELS: { pothole: 'Pothole', water_body: 'Water Body', crack: 'Crack', flooding: 'Flooding' },
-  TYPE_ICONS: { pothole: '[P]', water_body: '[W]', crack: '[C]', flooding: '[F]' },
-  TYPE_COLORS: { pothole: '#ef4444', water_body: '#00d4ff', crack: '#f59e0b', flooding: '#a855f7' },
+  TYPE_LABELS: {
+    pothole: 'Pothole',
+    pothole_dry: 'Dry Pothole',
+    pothole_waterlogged: 'Waterlogged Pothole',
+    water_body: 'Water Body',
+    waterlogging_area: 'Waterlogging Area',
+    crack: 'Crack',
+    flooding: 'Flooding',
+    open_manhole: 'Open Manhole',
+    drainage_overflow: 'Drainage Overflow',
+    damaged_footpath: 'Damaged Footpath'
+  },
+  TYPE_ICONS: {
+    pothole: '[P]',
+    pothole_dry: '[P]',
+    pothole_waterlogged: '[PW]',
+    water_body: '[W]',
+    waterlogging_area: '[WA]',
+    crack: '[C]',
+    flooding: '[F]',
+    open_manhole: '[M]',
+    drainage_overflow: '[D]',
+    damaged_footpath: '[DF]'
+  },
+  TYPE_COLORS: {
+    pothole: '#ef4444',
+    pothole_dry: '#ef4444',
+    pothole_waterlogged: '#f59e0b',
+    water_body: '#00d4ff',
+    waterlogging_area: '#3b82f6',
+    crack: '#eab308',
+    flooding: '#a855f7',
+    open_manhole: '#dc2626',
+    drainage_overflow: '#8b5cf6',
+    damaged_footpath: '#f97316'
+  },
   SEVERITY_COLORS: { LOW: '#10b981', MODERATE: '#f59e0b', HIGH: '#f97316', CRITICAL: '#ef4444' },
 };
 
@@ -41,46 +74,59 @@ function severityFromArea(a) {
   return 'LOW';
 }
 
+export function parseGeoJsonFeatures(geojson) {
+  if (!geojson || !geojson.features) return [];
+  return geojson.features.map((feature, idx) => {
+    const props = feature.properties || {};
+    const coords = feature.geometry?.coordinates || [73.1812, 22.3072];
+    const lon = coords[0];
+    const lat = coords[1];
+    const className = props.class_name || props.type || 'pothole_dry';
+    const volume = Number(props.estimated_volume_m3) || 0.05;
+    const confidence = props.confidence ?? 0.95;
+    const detectionsCount = props.detections_count || 1;
+    const hazardId = props.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
+
+    const area = props.surface_area_m2 || (volume * 100);
+    const severity = props.severity || (volume >= 0.3 ? 'CRITICAL' : volume >= 0.15 ? 'HIGH' : volume >= 0.05 ? 'MODERATE' : 'LOW');
+
+    return {
+      hazard_id: hazardId,
+      track_id: idx + 1,
+      type: className,
+      class_name: className,
+      confidence: confidence,
+      estimated_volume_m3: volume,
+      detections_count: detectionsCount,
+      surface_area_m2: area,
+      severity: severity,
+      priority_score: Math.round(confidence * 100),
+      zone: `Zone ${String.fromCharCode(65 + (idx % 4))}`,
+      status: props.status || 'OPEN',
+      first_detected: props.first_detected,
+      last_detected: props.last_detected,
+      location: { latitude: lat, longitude: lon },
+      raw_feature: feature,
+    };
+  });
+}
+
 const INITIAL_HAZARDS = [
   {
-    hazard_id: 'haz_101',
-    track_id: 101,
-    type: 'pothole',
-    confidence: 0.94,
-    surface_area_m2: 82.5,
-    severity: 'CRITICAL',
+    hazard_id: 'HAZ-0001',
+    track_id: 1,
+    type: 'pothole_dry',
+    class_name: 'pothole_dry',
+    confidence: 0.9542,
+    estimated_volume_m3: 0.0496,
+    detections_count: 27,
+    surface_area_m2: 4.96,
+    severity: 'LOW',
     priority_score: 95,
-    zone: 'Zone A - Main Arterial',
+    zone: 'Zone A',
     status: 'OPEN',
-    timestamp: Date.now() - 120000,
-    location: { latitude: 22.3078, longitude: 73.1819 }
-  },
-  {
-    hazard_id: 'haz_102',
-    track_id: 102,
-    type: 'flooding',
-    confidence: 0.88,
-    surface_area_m2: 34.2,
-    severity: 'HIGH',
-    priority_score: 78,
-    zone: 'Zone B - Industrial Park',
-    status: 'OPEN',
-    timestamp: Date.now() - 300000,
-    location: { latitude: 22.3065, longitude: 73.1802 }
-  },
-  {
-    hazard_id: 'haz_103',
-    track_id: 103,
-    type: 'crack',
-    confidence: 0.91,
-    surface_area_m2: 12.8,
-    severity: 'MODERATE',
-    priority_score: 52,
-    zone: 'Zone C - East Corridor',
-    status: 'OPEN',
-    timestamp: Date.now() - 450000,
-    location: { latitude: 22.3081, longitude: 73.1825 }
-  },
+    location: { latitude: 22.307199089287163, longitude: 73.18119957041166 }
+  }
 ];
 
 export const useStore = create((set, get) => ({
@@ -157,10 +203,18 @@ export const useStore = create((set, get) => ({
     const fileName = file.name;
     get().addLog(`Loaded pre-recorded video: ${fileName}`);
 
-    let activeUrl = blobUrl;
+    // Set local blobUrl immediately for instant HTML5 playback in UI
+    set({
+      videoPath: blobUrl,
+      feedMode: 'video',
+      streamRunning: true,
+      currentPage: 'dashboard',
+      viewMode: 'fly',
+    });
+
     let serverFilename = null;
 
-    // Post file to backend upload endpoint for HTTP streaming
+    // Post file to backend upload endpoint for AI video analysis
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -172,7 +226,6 @@ export const useStore = create((set, get) => ({
         const data = await res.json();
         if (data.filename) {
           serverFilename = data.filename;
-          activeUrl = `${get().settings.apiUrl}/api/videos/${data.filename}`;
           get().addLog(`Uploaded ${fileName} to server — HTTP stream ready: ${data.filename}`);
         }
       }
@@ -180,16 +233,8 @@ export const useStore = create((set, get) => ({
       console.warn('Backend API upload warning, using local blob stream:', err);
     }
 
-    set({
-      videoPath: activeUrl,
-      feedMode: 'video',
-      streamRunning: true,
-      currentPage: 'dashboard',
-      viewMode: 'fly',
-    });
-
     if (serverFilename) {
-      // Notify backend AI perception pipeline to process uploaded video
+      // Trigger backend stream loop with the uploaded file
       try {
         await fetch(`${get().settings.apiUrl}/api/stream/start?video_path=${encodeURIComponent(serverFilename)}`);
       } catch (e) {
@@ -307,8 +352,49 @@ export const useStore = create((set, get) => ({
     });
   },
 
+  fetchGeoJsonHazards: async () => {
+    try {
+      let res = await fetch('/hazards.geojson');
+      if (!res.ok) {
+        res = await fetch(`${get().settings.apiUrl}/api/hazards/geojson`);
+      }
+      if (res.ok) {
+        const geojson = await res.json();
+        if (geojson && geojson.features && geojson.features.length > 0) {
+          const parsedHazards = parseGeoJsonFeatures(geojson);
+          const totalArea = parsedHazards.reduce((sum, h) => sum + (Number(h.surface_area_m2) || 0), 0);
+          
+          set((state) => ({
+            hazards: parsedHazards,
+            currentState: {
+              ...(state.currentState || {}),
+              stream_status: 'LIVE',
+              frame_id: 1,
+              timestamp: Date.now() / 1000,
+              summary: {
+                active_hazards: parsedHazards.length,
+                total_affected_area: totalArea,
+                total_area_m2: totalArea,
+                overall_risk: 'CRITICAL',
+                risk_level: 'CRITICAL',
+                risk_score: 95,
+                action: 'Issue emergency response and traffic reroute.',
+                alert_count: parsedHazards.length,
+              },
+              hazards: parsedHazards,
+            }
+          }));
+          get().addLog(`Loaded ${parsedHazards.length} hazards from hazards.geojson`);
+        }
+      }
+    } catch (e) {
+      console.warn('GeoJSON fetch notice:', e);
+    }
+  },
+
   connect: () => {
     const state = get();
+    get().fetchGeoJsonHazards();
     if (['CONNECTING', 'LIVE'].includes(state.connectionStatus)) return;
     set({ connectionStatus: 'CONNECTING' });
     get()._connectWS();

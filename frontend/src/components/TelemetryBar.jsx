@@ -52,7 +52,7 @@ export default function TelemetryBar() {
           className="btn"
           onClick={switchToLiveFeed}
           style={{
-            background: 'linear-gradient(135deg, #00cc00, #009900)',
+            background: 'linear-gradient(135deg, #10b981, #059669)',
             color: '#1a1a1a',
             fontWeight: 800,
             fontSize: '0.75rem',
@@ -60,7 +60,7 @@ export default function TelemetryBar() {
             borderRadius: 4,
             border: 'none',
             cursor: 'pointer',
-            boxShadow: '0 0 10px rgba(0, 204, 0, 0.4)',
+            boxShadow: '0 0 10px rgba(16, 185, 129, 0.4)',
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6

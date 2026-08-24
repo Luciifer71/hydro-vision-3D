@@ -72,7 +72,7 @@ export default function AnalyzeView() {
   
   const sevData = {
     labels: ['Low', 'Moderate', 'High', 'Critical'],
-    datasets: [{ data: [sevCounts.LOW, sevCounts.MODERATE, sevCounts.HIGH, sevCounts.CRITICAL], backgroundColor: ['#00cc00', '#ffbb00', '#ff8800', '#cc0000'], borderWidth: 0 }],
+    datasets: [{ data: [sevCounts.LOW, sevCounts.MODERATE, sevCounts.HIGH, sevCounts.CRITICAL], backgroundColor: ['#10b981', '#ffbb00', '#ff8800', '#cc0000'], borderWidth: 0 }],
   };
 
   const typeCounts = { pothole: 0, water_body: 0, crack: 0, flooding: 0 };
@@ -99,7 +99,7 @@ export default function AnalyzeView() {
   const riskLevel = totalArea > 2.0 ? 'CRITICAL' : (totalArea > 0.5 ? 'HIGH' : 'LOW');
   const riskScore = currentState?.summary?.risk_score || 1;
 
-  const sevColors = { LOW: '#00cc00', MODERATE: '#ffbb00', HIGH: '#ff8800', CRITICAL: '#cc0000' };
+  const sevColors = { LOW: '#10b981', MODERATE: '#ffbb00', HIGH: '#ff8800', CRITICAL: '#cc0000' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
@@ -140,7 +140,7 @@ export default function AnalyzeView() {
               </div>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-around', marginTop: 6 }}>
-              {[['Low','#00cc00'],['Mod','#ffbb00'],['High','#ff8800'],['Crit','#cc0000']].map(([l,c]) => (
+              {[['Low','#10b981'],['Mod','#ffbb00'],['High','#ff8800'],['Crit','#cc0000']].map(([l,c]) => (
                 <div key={l} style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: '0.65rem', color: '#777' }}>
                   <div style={{ width: 7, height: 7, borderRadius: '50%', background: c }} />{l}
                 </div>

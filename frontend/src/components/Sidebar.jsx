@@ -53,7 +53,7 @@ export default function Sidebar() {
         <div className="status-row">
           <div className={`status-dot ${connectionStatus === 'LIVE' ? 'live' : connectionStatus === 'CONNECTING' || connectionStatus === 'RECONNECTING' ? 'connecting' : 'error'}`} />
           <span>{connectionStatus}</span>
-          <span style={{ marginLeft: 'auto', fontSize: '0.6rem', color: isLive ? '#00cc00' : 'var(--amber)', fontWeight: 800 }}>
+          <span style={{ marginLeft: 'auto', fontSize: '0.6rem', color: isLive ? '#10b981' : 'var(--amber)', fontWeight: 800 }}>
             {isLive ? 'LIVE' : 'VIDEO'}
           </span>
         </div>
