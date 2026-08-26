@@ -37,7 +37,6 @@ export default function AttitudeCard({ pitch = 0, roll = 0 }) {
           </>
         ) : (
           <div style={{ textAlign: 'center', padding: '16px 8px', color: '#888', fontSize: '0.78rem' }}>
-            <div style={{ fontSize: '1.2rem', marginBottom: 4 }}>🎬</div>
             Flight attitude telemetry is hidden during pre-recorded video analysis.
           </div>
         )}

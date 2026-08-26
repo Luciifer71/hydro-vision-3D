@@ -3,7 +3,6 @@ import { useStore } from '../store.js';
 const NAV = [
   { id: 'dashboard', label: 'Setup' },
   { id: 'stream', label: 'Stream Control' },
-  { id: 'settings', label: 'Configuration' },
   { section: 'Detection' },
   { id: 'detections', label: 'Detections', badge: 'detection' },
   { id: 'alerts', label: 'Alerts', badge: 'alert' },

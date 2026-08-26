@@ -137,7 +137,12 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
     if (isLiveFeed) {
       return (
         <div className="video-placeholder" style={{ gap: 14, background: 'linear-gradient(135deg, #181414, #0d0d10)', padding: 24, textAlign: 'center' }}>
-          <div style={{ fontSize: '2.5rem', marginBottom: -4 }}>📡</div>
+          <div style={{ marginBottom: 4 }}>
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M23 7l-7 5 7 5V7z"/>
+              <rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+            </svg>
+          </div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.1rem', color: '#ffbb00', fontWeight: 800, letterSpacing: '1px' }}>
             NO LIVE DRONE FEED SIGNAL
           </div>
@@ -155,16 +160,16 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
             <button
               className="btn"
               onClick={() => { setHasError(false); switchToLiveFeed(); }}
-              style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#1a1a1a', fontWeight: 800, padding: '8px 18px' }}
+              style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#1a1a1a', fontWeight: 800, padding: '8px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              ⚡ Retry Live Feed
+              Retry Live Feed
             </button>
             <button
               className="btn btn-outline"
               onClick={() => fileInputRef.current?.click()}
-              style={{ borderColor: 'var(--amber)', color: 'var(--amber)', fontWeight: 700, padding: '8px 18px' }}
+              style={{ borderColor: 'var(--amber)', color: 'var(--amber)', fontWeight: 700, padding: '8px 18px', display: 'flex', alignItems: 'center', gap: 6 }}
             >
-              📁 Upload Flight Video
+              Upload Flight Video
             </button>
           </div>
         </div>
@@ -173,7 +178,13 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
 
     return (
       <div className="video-placeholder" style={{ gap: 14, background: 'linear-gradient(135deg, #1f1a1a, #111111)', padding: 24, textAlign: 'center' }}>
-        <div style={{ fontSize: '2.5rem', marginBottom: -4 }}>⚠️</div>
+        <div style={{ marginBottom: -4 }}>
+          <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="#ef4444" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: '1.1rem', color: '#ffbb00', fontWeight: 800 }}>
           VIDEO FORMAT INCOMPATIBLE
         </div>
@@ -186,7 +197,7 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
             onClick={handleSwitchToSample}
             style={{ background: 'linear-gradient(135deg, #10b981, #059669)', color: '#1a1a1a', fontWeight: 800 }}
           >
-            🔴 Switch to Live Drone Feed
+            Switch to Live Drone Feed
           </button>
           <button
             className="btn btn-outline"

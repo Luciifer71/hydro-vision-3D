@@ -4,9 +4,22 @@ export default function DetectionsPage() {
   const { hazards, detectionSearch, detectionTypeFilter, setDetectionSearch, setDetectionTypeFilter, updateHazardStatus } = useStore();
 
   const filtered = hazards.filter(h => {
-    const matchType = detectionTypeFilter === 'all' || h.type === detectionTypeFilter;
+    const hazardType = (h.class_name || h.type || '').toLowerCase();
+    const filter = (detectionTypeFilter || 'all').toLowerCase();
+
+    let matchType = false;
+    if (filter === 'all') {
+      matchType = true;
+    } else if (filter === 'pothole') {
+      matchType = hazardType.includes('pothole');
+    } else {
+      matchType = hazardType === filter || hazardType.replace('-', '_') === filter.replace('-', '_');
+    }
+
     const q = detectionSearch.toLowerCase();
-    const matchSearch = !q || String(h.track_id).includes(q) || (h.type || '').includes(q) || (h.zone || '').toLowerCase().includes(q);
+    const typeLabel = (CONFIG.TYPE_LABELS[h.type] || CONFIG.TYPE_LABELS[h.class_name] || h.type || '').toLowerCase();
+    const matchSearch = !q || String(h.track_id).includes(q) || hazardType.includes(q) || typeLabel.includes(q) || (h.zone || '').toLowerCase().includes(q);
+    
     return matchType && matchSearch;
   });
 
@@ -25,12 +38,16 @@ export default function DetectionsPage() {
               value={detectionSearch}
               onChange={e => setDetectionSearch(e.target.value)}
             />
-            <select className="form-select" style={{ width: 160 }} value={detectionTypeFilter} onChange={e => setDetectionTypeFilter(e.target.value)}>
+            <select className="form-select" style={{ width: 220 }} value={detectionTypeFilter} onChange={e => setDetectionTypeFilter(e.target.value)}>
               <option value="all">All Types</option>
-              <option value="pothole">Pothole</option>
-              <option value="water_body">Water Body</option>
+              <option value="pothole">Pothole (All Types)</option>
+              <option value="pothole_dry">Pothole (Dry)</option>
+              <option value="pothole_waterlogged">Pothole (Waterlogged)</option>
+              <option value="waterlogging_area">Waterlogging Area</option>
+              <option value="open_manhole">Open Manhole</option>
               <option value="crack">Crack</option>
-              <option value="flooding">Flooding</option>
+              <option value="drainage_overflow">Drainage Overflow</option>
+              <option value="damaged_footpath">Damaged Footpath</option>
             </select>
           </div>
         </div>
@@ -50,10 +67,13 @@ export default function DetectionsPage() {
                 const area = Number(h.surface_area_m2) || 0;
                 const sev = (h.severity || 'LOW').toLowerCase();
                 const lat = h.location?.latitude, lon = h.location?.longitude;
+                const clsKey = h.class_name || h.type;
+                const typeIcon = CONFIG.TYPE_ICONS[clsKey] || CONFIG.TYPE_ICONS[h.type] || 'DEFECT';
+                const typeLabel = CONFIG.TYPE_LABELS[clsKey] || CONFIG.TYPE_LABELS[h.type] || clsKey;
                 return (
                   <tr key={h.track_id}>
                     <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>#{h.track_id}</td>
-                    <td><span className={`type-badge ${h.type}`}>{CONFIG.TYPE_ICONS[h.type]} {CONFIG.TYPE_LABELS[h.type]}</span></td>
+                    <td><span className={`type-badge ${clsKey}`}>{typeIcon} {typeLabel}</span></td>
                     <td>{((h.confidence ?? 1) * 100).toFixed(1)}%</td>
                     <td>{area.toFixed(2)}</td>
                     <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--text-muted)' }}>

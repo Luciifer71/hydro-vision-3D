@@ -11,7 +11,6 @@ import RiskPage from './pages/RiskPage.jsx';
 import VolumetricsPage from './pages/VolumetricsPage.jsx';
 import DepthPage from './pages/DepthPage.jsx';
 import StreamPage from './pages/StreamPage.jsx';
-import SettingsPage from './pages/SettingsPage.jsx';
 import BottomBar from './components/BottomBar.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import './index.css';
@@ -32,7 +31,6 @@ export default function App() {
     volumetric: <VolumetricsPage />,
     depth: <DepthPage />,
     stream: <StreamPage />,
-    settings: <SettingsPage />,
   };
 
   return (

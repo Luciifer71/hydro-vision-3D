@@ -38,16 +38,16 @@ const CONFIG = {
     damaged_footpath: 'Damaged Footpath'
   },
   TYPE_ICONS: {
-    pothole: '[P]',
-    pothole_dry: '[P]',
-    pothole_waterlogged: '[PW]',
-    water_body: '[W]',
-    waterlogging_area: '[WA]',
-    crack: '[C]',
-    flooding: '[F]',
-    open_manhole: '[M]',
-    drainage_overflow: '[D]',
-    damaged_footpath: '[DF]'
+    pothole: 'P',
+    pothole_dry: 'P',
+    pothole_waterlogged: 'PW',
+    water_body: 'W',
+    waterlogging_area: 'WA',
+    crack: 'C',
+    flooding: 'F',
+    open_manhole: 'M',
+    drainage_overflow: 'D',
+    damaged_footpath: 'DF'
   },
   TYPE_COLORS: {
     pothole: '#ef4444',

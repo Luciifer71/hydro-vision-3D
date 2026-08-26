@@ -50,7 +50,7 @@ export default function StreamPage() {
                 borderColor: '#10b981'
               }}
             >
-              <span>🔴</span> Live Drone Feed
+              <span>●</span> Live Drone Feed
             </button>
             <button
               className={`btn ${!isLive ? 'btn-primary' : 'btn-outline'}`}
@@ -69,7 +69,7 @@ export default function StreamPage() {
                 borderColor: 'var(--amber)'
               }}
             >
-              <span>🎬</span> Recorded Video Analysis
+              Recorded Video Analysis
             </button>
           </div>
 

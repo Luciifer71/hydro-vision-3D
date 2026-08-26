@@ -11,21 +11,21 @@ L.Icon.Default.mergeOptions({
 
 const TILE_LAYERS = {
   'google-hybrid': {
-    name: '🛰️ Satellite',
+    name: 'Satellite',
     url: 'https://mt{s}.google.com/vt/lyrs=y&x={x}&y={y}&z={z}',
     subdomains: ['0', '1', '2', '3'],
     maxZoom: 20,
     attribution: '© Google Maps Satellite',
   },
   'google-streets': {
-    name: '🗺️ Map',
+    name: 'Streets',
     url: 'https://mt{s}.google.com/vt/lyrs=m&x={x}&y={y}&z={z}',
     subdomains: ['0', '1', '2', '3'],
     maxZoom: 20,
     attribution: '© Google Maps',
   },
   'dark': {
-    name: '🌙 Dark',
+    name: 'Dark',
     url: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',
     subdomains: ['a', 'b', 'c', 'd'],
     maxZoom: 19,
@@ -134,8 +134,8 @@ export default function HazardMap({ fullpage = false }) {
       const popup = `
         <div style="min-width:185px;font-family:'Segoe UI',sans-serif;font-size:12px;color:#0f172a;padding:2px">
           <div style="font-weight:800;color:${color};font-size:13px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e2e8f0;padding-bottom:4px">
-            <span style="display:flex;align-items:center;gap:4px">
-              <span>${CONFIG.TYPE_ICONS[className] || CONFIG.TYPE_ICONS[h.type] || '⚠️'}</span>
+            <span style="display:flex;align-items:center;gap:6px">
+              <span style="background:${color};color:#ffffff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700">${CONFIG.TYPE_ICONS[className] || CONFIG.TYPE_ICONS[h.type] || 'DEFECT'}</span>
               <span>${(CONFIG.TYPE_LABELS[className] || className).toUpperCase()}</span>
             </span>
             <span style="font-size:10px;color:#64748b;font-family:monospace">${hazardId}</span>
@@ -146,7 +146,7 @@ export default function HazardMap({ fullpage = false }) {
             <div><span style="color:#64748b;font-weight:600">Estimated Volume:</span> <strong>${volumeStr}</strong></div>
             <div><span style="color:#64748b;font-weight:600">Detection Count:</span> <strong>${detectionsStr}</strong></div>
             <div style="font-family:monospace;color:#64748b;margin-top:4px;font-size:10px;border-top:1px dashed #cbd5e1;padding-top:3px">
-              📍 ${h.location.latitude.toFixed(6)}, ${h.location.longitude.toFixed(6)}
+              GPS: ${h.location.latitude.toFixed(6)}, ${h.location.longitude.toFixed(6)}
             </div>
           </div>
         </div>
@@ -209,7 +209,7 @@ export default function HazardMap({ fullpage = false }) {
       droneMarkerRef.current = L.marker([lat, lon], { icon: droneIcon }).addTo(map);
       droneMarkerRef.current.bindPopup(`
         <div style="font-family:'Segoe UI',sans-serif;font-size:12px;font-weight:700">
-          🚁 LIVE DRONE POSITION<br/>
+          LIVE DRONE POSITION<br/>
           <span style="font-size:11px;color:#64748b;font-weight:normal">
             ALT: ${telemetry.altitude.toFixed(1)}m | SPD: ${telemetry.speed.toFixed(1)}m/s
           </span>
@@ -324,7 +324,13 @@ export default function HazardMap({ fullpage = false }) {
             boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
           }}
         >
-          🎯
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#10b981" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <circle cx="12" cy="12" r="9"/>
+            <line x1="12" y1="1" x2="12" y2="5"/>
+            <line x1="12" y1="19" x2="12" y2="23"/>
+            <line x1="1" y1="12" x2="5" y2="12"/>
+            <line x1="19" y1="12" x2="23" y2="12"/>
+          </svg>
         </button>
         <button
           onClick={handleZoomIn}

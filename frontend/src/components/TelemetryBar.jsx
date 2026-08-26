@@ -28,7 +28,7 @@ export default function TelemetryBar() {
             color: 'var(--amber)', padding: '3px 10px', borderRadius: 4,
             fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.5px'
           }}>
-            <span>🎬 RECORDED VIDEO ANALYSIS MODE</span>
+            <span>RECORDED VIDEO ANALYSIS MODE</span>
             <span style={{ fontSize: '0.65rem', opacity: 0.8 }}>(Live Telemetry Hidden)</span>
           </div>
 
@@ -66,7 +66,7 @@ export default function TelemetryBar() {
             gap: 6
           }}
         >
-          <span style={{ fontSize: '0.9rem' }}>🔴</span>
+          <span>●</span>
           Switch to Live Drone Feed
         </button>
       </div>

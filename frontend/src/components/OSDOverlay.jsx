@@ -12,8 +12,9 @@ function OSDTag({ label, value, unit, valClass }) {
 }
 
 export default function OSDOverlay({ telemetry, riskLevel, activeHazards, totalArea, riskScore, isCritical, streamRunning, frameId }) {
-  const { feedMode } = useStore();
+  const { feedMode, connectionStatus } = useStore();
   const isLiveFeed = feedMode === 'live';
+  const isOffline = connectionStatus === 'OFFLINE' || connectionStatus === 'RECONNECTING' || connectionStatus === 'CONNECTING';
   const t = telemetry;
   const battPct = Math.round(t.battery);
   const battClass = battPct > 40 ? 'good' : battPct > 20 ? 'warn' : 'danger';
@@ -39,15 +40,15 @@ export default function OSDOverlay({ telemetry, riskLevel, activeHazards, totalA
         </div>
       )}
 
-      {/* Artificial Horizon — Only in Live Drone Feed */}
-      {isLiveFeed && (
+      {/* Artificial Horizon — Only in Live Drone Feed when connected */}
+      {isLiveFeed && !isOffline && (
         <div className="horizon-box">
           <div className="horizon-line" style={{ transform: `rotate(${(t.roll || 0) * 0.3}deg)` }} />
         </div>
       )}
 
-      {/* Crosshair */}
-      <div className="osd-crosshair" />
+      {/* Crosshair — Only show when stream is active and online */}
+      {!isOffline && <div className="osd-crosshair" />}
 
       {/* OSD Data */}
       <div className="osd">

@@ -122,20 +122,6 @@ export default function Header() {
           {time.toLocaleTimeString('en-US', { hour12: false })}
         </div>
 
-        {alertCount > 0 && (
-          <div style={{ position: 'relative' }}>
-            <button className="btn btn-outline" style={{ padding: '3px 8px', fontSize: '0.72rem' }}>
-              ALT {alertCount}
-              <span style={{
-                position: 'absolute', top: -4, right: -4,
-                background: '#cc0000', color: '#fff',
-                fontSize: '0.55rem', fontWeight: 700, padding: '1px 4px',
-                borderRadius: 6, minWidth: 14, textAlign: 'center'
-              }}>{alertCount}</span>
-            </button>
-          </div>
-        )}
-
         {/* Feed Mode Controls */}
         {!isLive ? (
           <button
@@ -157,7 +143,7 @@ export default function Header() {
               boxShadow: '0 0 8px rgba(16, 185, 129, 0.4)',
             }}
           >
-            <span style={{ fontSize: '0.85rem' }}>🔴</span>
+            <span>●</span>
             Switch to Live Feed
           </button>
         ) : (
