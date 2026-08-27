@@ -1039,9 +1039,6 @@ The intended transition is:
 
 ELCIA Tech Summit 2026 Hackathon
 GSFC University
-
-Lead Developer: Krishay Mayur Shah
-
 ---
 
 **HYDRO-VISION-3D**
