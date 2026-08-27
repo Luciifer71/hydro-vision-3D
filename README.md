@@ -1,332 +1,1087 @@
 # 🌊 HYDRO-VISION-3D
 
+### AI-Powered 3D Ground Control Station for Monsoon, Road & Civic Infrastructure Intelligence
+
 <p align="center">
-  <strong>AI-Powered Real-Time Road Hazard & Waterlogging Intelligence for Smart Cities</strong><br>
-  Team Drone404 &nbsp;•&nbsp; ELCIA Tech Summit 2026 Hackathon
+
+**Team Drone404 • ELCIA Tech Summit 2026 Hackathon • GSFC University**
+
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11-blue" />
-  <img src="https://img.shields.io/badge/FastAPI-Backend-009688" />
-  <img src="https://img.shields.io/badge/YOLOv8-Detection%20%2B%20Tracking-red" />
-  <img src="https://img.shields.io/badge/OpenCV-Computer%20Vision-5C3EE8" />
-  <img src="https://img.shields.io/badge/WebSocket-Live%20Streaming-lightgrey" />
-  <img src="https://img.shields.io/badge/Leaflet.js-GIS%20Mapping-199900" />
-  <img src="https://img.shields.io/badge/Chart.js-Live%20Analytics-FF6384" />
+
+![Python](https://img.shields.io/badge/Python-3.11-blue?logo=python)
+![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688)
+![YOLO](https://img.shields.io/badge/YOLO-AI%20Detection-red)
+![Depth Anything V2](https://img.shields.io/badge/Depth%20Anything%20V2-3D%20Depth-purple)
+![React](https://img.shields.io/badge/React-18-61DAFB?logo=react)
+![WebSocket](https://img.shields.io/badge/WebSocket-Real--Time-lightgrey)
+![Leaflet](https://img.shields.io/badge/Leaflet-GIS-199900)
+![Supabase](https://img.shields.io/badge/Supabase-PostgreSQL-3ECF8E)
+
 </p>
 
 ---
 
-## 📖 Overview
+## 🎯 Problem Statement
 
-**HYDRO-VISION-3D** turns raw drone/CCTV road footage into a **live, geo-located hazard intelligence dashboard**.
+### Monsoon, Roads & Civic Infrastructure Intelligence
 
-A FastAPI backend runs each video frame through a custom-trained **YOLOv8** detection-and-tracking pipeline, converts pixel-space detections into **estimated real-world surface area (m²)** using a camera-geometry model, assigns each hazard a **severity level and maintenance priority score**, geo-locates it against **Vadodara municipal zones**, and streams everything to a live web dashboard over **WebSocket** — no page refresh, no polling.
+Use road, drain and rainfall-condition videos to identify:
 
-Built as a working prototype for municipal AP/infrastructure teams who currently rely on manual road inspections and citizen complaints. It demonstrates the full pipeline end-to-end on real drone footage — detection, geometry, risk scoring, and a live operational dashboard — as a foundation for a production deployment.
+- 💧 Waterlogging
+- 🕳️ Potholes
+- 🚰 Drainage overflow
+- 🚶 Damaged footpaths
+- ⚠️ Road-surface and civic infrastructure risks
 
----
+Each detected issue should be associated with:
 
-## ✨ Key Features
+- 📍 Zone
+- 🔴 Severity
+- 🕐 Time
+- 📸 Visual evidence
 
-| Capability | Description |
-|---|---|
-| 🎯 **Real-time Detection + Tracking** | YOLOv8 model tracks each hazard across frames with a persistent `track_id`, so the same pothole isn't double-counted frame to frame |
-| 📐 **Pixel → Real-World Area Conversion** | Custom `MetricMapper` converts bounding-box pixel area into estimated square meters based on frame geometry (a geometric approximation, not a calibrated survey measurement) |
-| 🧮 **EMA Smoothing** | Area readings are smoothed frame-to-frame (`0.7 × previous + 0.3 × current`) to suppress detection jitter |
-| 🚦 **Automated Severity Indexing** | Every hazard is auto-classified LOW / MODERATE / HIGH / CRITICAL based on affected area, each with a recommended action |
-| 🗺️ **GIS Zone Assignment** | Detections are auto-mapped to Vadodara municipal ward zones (e.g. *Sayajigunj*, *Akota/Gotri*, *Makarpura/GIDC*) using lat/lon rules |
-| 📊 **Priority Scoring** | A 1–100 maintenance priority score is computed per hazard from severity, area, and hazard type |
-| 📸 **Visual Evidence Capture** | Each new hazard is auto-cropped and saved as a snapshot image, linked directly from its dashboard record |
-| 🔴 **Live WebSocket Streaming** | The dashboard subscribes over `/ws/live-stream` and receives hazard updates in real time — no polling |
-| 🖥️ **Full Operations Dashboard** | 7-page dashboard: Overview, GIS Map, Detections, Alerts, Risk Engine, Volumetrics, and Stream Control |
-| 🎫 **Maintenance Ticket Lifecycle** | Each hazard has a status (`OPEN` → `IN_PROGRESS` → `RESOLVED`) updatable via REST API |
-| 🌐 **GeoJSON Export** | `/api/hazards/geojson` exposes all active hazards as a standard GeoJSON `FeatureCollection` for use in any external GIS tool |
+and should ultimately support a:
+
+> **Maintenance-priority and closure-tracking dashboard.**
 
 ---
 
-## 🏗 System Architecture
+# 💡 Our Solution
+
+**HYDRO-VISION-3D** is an end-to-end AI-powered Ground Control Station (GCS) that transforms drone and inspection video into **real-time, geo-located, quantified and actionable infrastructure intelligence**.
+
+Instead of simply detecting a pothole or waterlogged area, the system is designed to answer:
+
+> **What is the hazard, where is it, how large is it, how severe is it, how urgent is it, what evidence supports it, and what action should be taken?**
+
+### Complete Pipeline
 
 ```text
-                  ┌────────────────────────┐
-                  │   Drone / CCTV Video    │
-                  │   (master_video.mp4)    │
-                  └───────────┬────────────┘
-                              │  frame-by-frame
-                              ▼
-                  ┌────────────────────────┐
-                  │  PerceptionEngine       │
-                  │  (YOLOv8 detect+track)  │
-                  └───────────┬────────────┘
-                              │  class, conf, bbox, track_id
-                              ▼
-                  ┌────────────────────────┐
-                  │  MetricMapper           │
-                  │  pixel area → m²        │
-                  └───────────┬────────────┘
-                              │
-                              ▼
-                  ┌────────────────────────┐
-                  │  GeoTranslator          │
-                  │  bbox → lat/lon         │
-                  └───────────┬────────────┘
-                              │
-                              ▼
-                  ┌────────────────────────┐
-                  │  SeverityIndexer        │
-                  │  area → LOW..CRITICAL   │
-                  └───────────┬────────────┘
-                              │
-                              ▼
-                  ┌────────────────────────┐
-                  │  FastAPI Backend        │
-                  │  state + REST + WS      │
-                  └───────────┬────────────┘
-                              │  broadcast over WebSocket
-                              ▼
-                  ┌────────────────────────┐
-                  │  Live Dashboard (SPA)   │
-                  │  Charts · Map · Tables  │
-                  └────────────────────────┘
+🚁 Drone / Inspection Video
+            │
+            ▼
+     Video Ingestion
+            │
+            ▼
+   YOLO Detection + Tracking
+            │
+            ├───────────────┐
+            ▼               ▼
+   Hazard Classification   Depth Anything V2
+            │               │
+            └───────┬───────┘
+                    ▼
+          Spatial Intelligence
+                    │
+          ┌─────────┴─────────┐
+          ▼                   ▼
+      Area (m²)          Depth / Volume (m³)
+          │                   │
+          └─────────┬─────────┘
+                    ▼
+          GPS / WGS84 Projection
+                    │
+                    ▼
+          Severity + Risk Engine
+                    │
+                    ▼
+          Real-Time WebSocket
+                    │
+                    ▼
+            React GCS Dashboard
+                    │
+        ┌───────────┼───────────┐
+        ▼           ▼           ▼
+       GIS        Alerts       OSD
+        │           │           │
+        └───────────┼───────────┘
+                    ▼
+          Maintenance Workflow
+                    │
+                    ▼
+           Supabase / PostgreSQL
 ```
 
 ---
 
-## 🧠 Technology Stack
+# 🧩 How HYDRO-VISION-3D Solves the Problem
 
-| Layer | Technology | Why |
-|---|---|---|
-| **Detection & Tracking** | YOLOv8 (Ultralytics) with built-in tracker | Fast, well-supported, native `.track()` gives persistent IDs out of the box |
-| **Computer Vision** | OpenCV | Video I/O, frame decoding, snapshot cropping |
-| **Backend / API** | FastAPI + Uvicorn | Async-native, first-class WebSocket support, auto-generated OpenAPI docs |
-| **Realtime Transport** | Native WebSocket (`/ws/live-stream`) | Push-based updates — dashboard reflects new detections within milliseconds, no polling overhead |
-| **Frontend** | Vanilla JavaScript (ES6 classes) | Zero build step — runs directly in-browser, easy to demo on any machine |
-| **Charts** | Chart.js | Live-updating timeline, severity donut, hazard-type bar chart, risk gauge |
-| **Mapping** | Leaflet.js + CARTO dark tiles | Lightweight, no API key required, live-updating hazard markers |
-| **State** | In-process Python dict (`latest_system_state`) | No DB dependency for the hackathon build — keeps setup to a single `pip install` |
+| Problem Statement | Our Implementation |
+|---|---|
+| Waterlogging | AI detection + spatial/depth analysis |
+| Potholes | YOLO detection + persistent tracking |
+| Drainage overflow | Hazard classification and monitoring |
+| Damaged footpaths | AI-based infrastructure hazard detection |
+| Surface risks | Detection + severity/risk engine |
+| Zone | GPS/WGS84 + municipal zone mapping |
+| Severity | LOW / MODERATE / HIGH / CRITICAL |
+| Time | Frame timestamps + session timeline |
+| Visual Evidence | Automatic hazard snapshots |
+| Maintenance Priority | 1–100 risk/priority score |
+| Closure Tracking | OPEN → IN_PROGRESS → RESOLVED |
+| Real-Time Monitoring | FastAPI + WebSocket |
+| Spatial Intelligence | GIS + GeoJSON |
+| 3D Intelligence | Depth Anything V2 + volumetric estimation |
+| Persistent Records | Supabase + PostgreSQL |
 
 ---
 
-## 📂 Repository Structure
+# ✨ Key Features
+
+## 🎯 AI Hazard Detection & Tracking
+
+The perception pipeline uses trained YOLO models to detect and classify road and civic infrastructure hazards.
+
+Each detection can contain:
+
+```text
+Hazard Class
+Confidence
+Bounding Box
+Track ID
+Frame ID
+Timestamp
+```
+
+Persistent `track_id` values allow the system to track the same physical hazard across consecutive frames, reducing duplicate counting and improving temporal consistency.
+
+---
+
+## 🧊 3D & Depth Intelligence
+
+HYDRO-VISION-3D integrates **Depth Anything V2** for dense monocular depth estimation.
+
+The depth pipeline allows the system to move beyond simple 2D bounding boxes toward spatial and volumetric understanding.
+
+```text
+RGB Drone Frame
+       │
+       ▼
+Depth Anything V2
+       │
+       ▼
+Dense Depth Map
+       │
+       ▼
+Hazard Region
+       │
+       ▼
+Depth-Aware Geometry
+       │
+       ▼
+Estimated Volume (m³)
+```
+
+This is especially useful for:
+
+- Waterlogging
+- Road depressions
+- Potholes
+- Surface-level infrastructure damage
+
+where volume can provide more information than area alone.
+
+---
+
+## 📐 Real-World Area Estimation
+
+Image-space detections are converted into estimated physical dimensions using camera geometry and Ground Sample Distance (GSD).
+
+```text
+Pixel Detection
+      ↓
+Camera Geometry
+      ↓
+GSD / Spatial Scaling
+      ↓
+Estimated Real-World Area
+      ↓
+m²
+```
+
+The measurements are engineering estimates and can be further calibrated for production-grade surveying.
+
+---
+
+## 🌍 Geospatial Intelligence
+
+The system combines image coordinates with drone telemetry and camera parameters to estimate geographic locations.
+
+Inputs include:
+
+- Latitude
+- Longitude
+- Altitude
+- Heading
+- Camera orientation
+- Camera intrinsics
+- Pixel coordinates
+
+```text
+Image Detection
+      +
+Drone Telemetry
+      +
+Camera Geometry
+      ↓
+Geospatial Projection
+      ↓
+WGS84 Coordinates
+      ↓
+Municipal Zone
+      ↓
+GIS Hazard Record
+```
+
+Hazards can also be exported as standard **GeoJSON** data.
+
+---
+
+## 📉 EMA-Based Stabilization
+
+Computer-vision measurements naturally fluctuate between frames.
+
+HYDRO-VISION-3D uses Exponential Moving Average (EMA) smoothing to stabilize measurements:
+
+```text
+Smoothed Value =
+0.7 × Previous Value +
+0.3 × Current Value
+```
+
+This reduces:
+
+- Detection jitter
+- Measurement fluctuations
+- Risk-score instability
+- Severity flickering
+- Unstable analytics graphs
+
+---
+
+# 🚦 Risk & Severity Engine
+
+Every detected hazard receives a severity classification.
+
+| Severity | Affected Area | Recommended Action |
+|---|---:|---|
+| 🟢 LOW | `< 5 m²` | Monitor |
+| 🟡 MODERATE | `5–25 m²` | Schedule maintenance |
+| 🟠 HIGH | `25–75 m²` | Dispatch maintenance crew |
+| 🔴 CRITICAL | `≥ 75 m²` | Emergency response / traffic reroute |
+
+The system also calculates a normalized **1–100 risk/maintenance priority score**.
+
+Priority can consider:
+
+- Hazard type
+- Affected area
+- Severity
+- Safety implications
+
+For example, a waterlogged road or open manhole can receive a higher operational priority than an equivalent-area low-risk surface defect.
+
+---
+
+# 🛰️ Ground Control Station
+
+The React-based GCS is the central interface for operating and monitoring the inspection mission.
+
+## Live Drone Feed
+
+The Live Feed provides:
+
+- Live video
+- GPS
+- Altitude
+- Heading
+- Battery
+- RSSI
+- Satellite count
+- Speed
+- Vertical speed
+- Flight time
+- Active hazards
+- Affected area
+- Risk level
+- Risk score
+- Frame information
+
+### Live OSD
+
+The on-screen display provides mission-critical information directly over the video feed.
+
+```text
+LAT / LON
+ALT / HDG
+BATT / RSSI / SAT
+SPD / V.SPD
+TIME
+HAZARDS
+AREA
+RISK
+SCORE
+FRAME
+```
+
+---
+
+# 🎥 Dual Video Modes
+
+## Recorded Video Analysis
+
+Used for:
+
+- Demonstrations
+- Post-monsoon assessment
+- Offline inspection
+- Testing
+- Repeatable evaluation
+- Mission analysis
+
+## Live Drone Feed
+
+Used for:
+
+- Real-time inspection
+- Live telemetry
+- Real-time hazard monitoring
+- Operator decision support
+
+The GCS can switch between recorded and live inspection workflows.
+
+---
+
+# 📊 Analytics Dashboard
+
+The dashboard provides a centralized view of the current mission.
+
+### Infrastructure Overview
+
+Displays:
+
+- Total hazards
+- Active alerts
+- Cumulative affected area
+- Estimated cumulative volume
+- Session risk level
+- Active alerts
+- Detection timeline
+- Severity distribution
+- Hazard classification
+- Risk score gauge
+
+### Live Hazard Feed
+
+Continuously displays detected hazards with:
+
+- Hazard classification
+- Track ID
+- Severity
+- Area
+- Status
+- Relevant measurements
+
+### Mission Status
+
+Provides a quick operational summary:
+
+```text
+Mode
+Total Hazards Found
+Affected Area
+Current Risk
+Recommended Action
+```
+
+---
+
+# 🗺️ GIS & Spatial Dashboard
+
+The platform includes an interactive Leaflet-based GIS interface.
+
+It visualizes:
+
+- Hazard locations
+- Severity markers
+- Municipal zones
+- Drone position
+- Flight information
+- Spatial context
+
+The backend provides GeoJSON export for interoperability with external GIS systems.
+
+```text
+GET /api/hazards/geojson
+```
+
+---
+
+# ⚡ Real-Time WebSocket Architecture
+
+The system uses **FastAPI + WebSocket** for real-time communication between the AI pipeline and GCS.
+
+```text
+AI Pipeline
+     │
+     ▼
+FastAPI Backend
+     │
+     │ WebSocket
+     ▼
+Zustand Central State
+     │
+ ┌───┼─────────┬─────────┐
+ ▼   ▼         ▼         ▼
+OSD Charts   Alerts     GIS
+```
+
+This enables the dashboard to update continuously without page refreshes or traditional polling.
+
+Real-time updates can include:
+
+- Hazard detections
+- Telemetry
+- Risk score
+- Hazard count
+- Detection timeline
+- Mission status
+- GIS information
+
+---
+
+# 📸 Visual Evidence Capture
+
+When a new hazard is detected, the system can generate a visual evidence snapshot.
+
+```text
+New Hazard
+    ↓
+Track ID
+    ↓
+Detection Region
+    ↓
+Evidence Crop
+    ↓
+Saved Snapshot
+    ↓
+Linked to Hazard Record
+```
+
+This gives maintenance personnel visual confirmation before dispatching resources.
+
+---
+
+# 🎫 Maintenance & Closure Tracking
+
+HYDRO-VISION-3D connects AI detection with an operational maintenance workflow.
+
+```text
+DETECTED
+   ↓
+OPEN
+   ↓
+IN_PROGRESS
+   ↓
+RESOLVED
+```
+
+Each hazard record can include:
+
+```text
+Hazard Type
+Track ID
+Confidence
+Area
+Estimated Volume
+Severity
+Priority Score
+GPS Location
+Municipal Zone
+Timestamp
+Visual Evidence
+Maintenance Status
+```
+
+This creates a complete:
+
+> **Detect → Assess → Prioritize → Dispatch → Resolve**
+
+workflow.
+
+---
+
+# ☁️ Supabase & PostgreSQL
+
+HYDRO-VISION-3D integrates **Supabase with PostgreSQL** for persistent cloud storage.
+
+The architecture separates immediate real-time processing from long-term data persistence.
+
+```text
+Real-Time AI Processing
+          │
+          ▼
+      Local State
+          │
+          ├──────────→ WebSocket → GCS
+          │
+          ▼
+      Supabase
+          │
+          ▼
+     PostgreSQL
+```
+
+Persistent storage enables:
+
+- Mission history
+- Hazard records
+- Spatial information
+- Evidence references
+- Maintenance status
+- Municipal auditing
+- Historical analysis
+- Future predictive maintenance
+
+---
+
+# 🏗️ System Architecture
+
+```text
+                         ┌──────────────────────┐
+                         │ 🚁 DRONE / VIDEO FEED│
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+                         ┌──────────────────────┐
+                         │   VIDEO INGESTION    │
+                         └──────────┬───────────┘
+                                    │
+                                    ▼
+              ┌─────────────────────────────────────┐
+              │             AI PERCEPTION            │
+              │                                     │
+              │ YOLO Detection + Tracking           │
+              │ Depth Anything V2                   │
+              └─────────────────┬───────────────────┘
+                                │
+                                ▼
+              ┌─────────────────────────────────────┐
+              │       SPATIAL INTELLIGENCE          │
+              │                                     │
+              │ Area • Depth • Volume               │
+              │ GPS • WGS84 • GeoJSON               │
+              └─────────────────┬───────────────────┘
+                                │
+                                ▼
+              ┌─────────────────────────────────────┐
+              │             RISK ENGINE              │
+              │                                     │
+              │ EMA • Severity • Priority • Risk    │
+              └─────────────────┬───────────────────┘
+                                │
+                                ▼
+                         ┌──────────────────┐
+                         │  FASTAPI CORE    │
+                         │ REST + WebSocket │
+                         └────────┬─────────┘
+                                  │
+                                  ▼
+                         ┌──────────────────┐
+                         │    REACT GCS     │
+                         │                  │
+                         │ Video • OSD      │
+                         │ Analytics • GIS  │
+                         │ Alerts • Mission │
+                         └────────┬─────────┘
+                                  │
+                                  ▼
+                         ┌──────────────────┐
+                         │ SUPABASE /       │
+                         │ POSTGRESQL       │
+                         └──────────────────┘
+```
+
+---
+
+# 🛠️ Technology Stack
+
+| Layer | Technology | Purpose |
+|---|---|---|
+| Programming | Python 3.11 | AI + backend |
+| Backend | FastAPI + Uvicorn | REST + WebSocket |
+| AI Detection | YOLO | Hazard detection |
+| Tracking | Ultralytics Tracking | Persistent hazard IDs |
+| Depth | Depth Anything V2 | Monocular depth estimation |
+| Computer Vision | OpenCV | Video processing |
+| Acceleration | PyTorch + CUDA | GPU inference |
+| Frontend | React 18 + Vite | GCS |
+| State Management | Zustand | Central frontend state |
+| Styling | Tailwind CSS / Custom CSS | Dashboard UI |
+| Charts | Recharts / Chart.js | Analytics |
+| Mapping | Leaflet / React-Leaflet | GIS |
+| Geospatial | WGS84 / GeoJSON | Spatial interoperability |
+| Realtime | WebSocket | Live communication |
+| Database | PostgreSQL | Persistent storage |
+| Cloud | Supabase | Cloud synchronization |
+
+---
+
+# 📂 Repository Structure
 
 ```text
 hydro-vision-3D/
+│
 ├── data/
-│   └── raw_videos/               # Drop your source footage here (see below)
-│       └── master_video.mp4
+│   └── raw_videos/              # Drone / inspection footage
+│
 ├── models/
-│   └── checkpoints/
-│       └── road_hazards_yolov8.pt
+│   └── checkpoints/             # AI model weights
+│
 ├── src/
-│   ├── backend/
-│   │   └── app.py                # FastAPI app — REST + WebSocket + pipeline loop
-│   ├── ingestion/
-│   │   └── stream_loader.py      # Frame generator (frame_id, timestamp, frame)
-│   ├── perception/
-│   │   └── mask_extractor.py     # PerceptionEngine — YOLOv8 detect + track
-│   ├── geometry/
-│   │   ├── metric_mapper.py      # Pixel area → real-world m²
-│   │   └── geo_utils.py          # Pixel bbox → lat/lon
-│   ├── analytics/
-│   │   └── severity_indexer.py   # Area → severity level + action
-│   └── run_perception.py         # Standalone CLI pipeline runner (no dashboard)
+│   ├── backend/                 # FastAPI backend
+│   ├── ingestion/               # Video/frame ingestion
+│   ├── perception/              # YOLO detection + tracking
+│   ├── geometry/                # Area + geospatial projection
+│   ├── analytics/               # Severity + risk engine
+│   └── run_perception.py        # Standalone pipeline
+│
 ├── frontend/
-│   ├── index.html
-│   ├── script.js
-│   └── style.css
+│   └── src/
+│       ├── components/          # GCS components
+│       ├── pages/               # Dashboard pages
+│       ├── hooks/               # Realtime/data hooks
+│       ├── lib/                 # Supabase/utilities
+│       └── store.js             # Zustand central state
+│
 ├── static/
-│   └── snapshots/                 # Auto-saved hazard evidence images
+│   └── snapshots/               # Hazard evidence
+│
 ├── config/
 │   └── camera_intrinsics.json
+│
 ├── docs/
-│   └── screenshots/                # Dashboard screenshots — see checklist below
+│   ├── screenshots/
+│   └── architecture/
+│
+├── tests/
 ├── requirements.txt
+├── main.py
 └── README.md
 ```
 
 ---
 
-## 🚀 Getting Started
+# 🔌 API
 
-### 1. Clone & set up the environment
+| Method | Endpoint | Purpose |
+|---|---|---|
+| `GET` | `/api/health` | System health and stream status |
+| `GET` | `/api/stream/start` | Start inspection pipeline |
+| `GET` | `/api/stream/stop` | Stop and reset inspection |
+| `GET` | `/api/hazards` | Retrieve current hazards |
+| `GET` | `/api/hazards/geojson` | Export hazards as GeoJSON |
+| `POST` | `/api/hazards/status` | Update maintenance status |
+| `GET` | `/api/config` | Retrieve system configuration |
+| `WS` | `/ws/live-stream` | Real-time hazard and telemetry stream |
+
+FastAPI documentation:
+
+```text
+http://localhost:8000/docs
+```
+
+---
+
+# 🚀 Quick Start
+
+## Prerequisites
+
+- Python 3.10+
+- Python 3.11 recommended
+- Node.js 18+
+- Git
+- NVIDIA GPU + CUDA recommended for accelerated inference
+
+---
+
+## 1. Clone Repository
 
 ```bash
-git clone https://github.com/<your-username>/hydro-vision-3D.git
+git clone https://github.com/Luciifer71/hydro-vision-3D.git
 cd hydro-vision-3D
+```
 
-conda create -n hydrovision python=3.11
-conda activate hydrovision
+---
 
+## 2. Backend Setup
+
+### Create Virtual Environment
+
+```bash
+python -m venv .venv
+```
+
+### Windows
+
+```bash
+.venv\Scripts\activate
+```
+
+### Linux / macOS
+
+```bash
+source .venv/bin/activate
+```
+
+### Install Dependencies
+
+```bash
 pip install -r requirements.txt
 ```
 
-### 2. Add your video
-
-Place your drone/CCTV footage in `data/raw_videos/`. Name it with `master` or `combined` in the filename (e.g. `master_video.mp4`) — the backend automatically resolves this file on startup. If no such file is found, it falls back to the first `.mp4` in that folder.
-
-### 3. Start the backend
+### Start Backend
 
 ```bash
-python -m uvicorn src.backend.app:app --host 0.0.0.0 --port 8000 --reload
+python main.py
 ```
 
-On startup you should see the pipeline auto-resolve your video and begin streaming once a dashboard client connects:
+Alternatively:
 
-```
-[INFO] Client connected. Active connections: 1
-[INFO] Auto-starting stream loop with: data/raw_videos/master_video.mp4
-[INIT] Loading AI Pipeline Components...
+```bash
+python -m uvicorn src.backend.app:app --host 0.0.0.0 --port 8000
 ```
 
-### 4. Open the dashboard
+Backend:
 
-Open `frontend/index.html` directly in a browser, or serve it via the backend's static mount at `http://localhost:8000/`. The dashboard connects automatically — no configuration needed for a local demo.
+```text
+http://localhost:8000
+```
 
-### 5. (Optional) Run the pipeline standalone, without the dashboard
+---
 
-Useful for quickly checking detections in the terminal:
+## 3. Frontend Setup
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Dashboard:
+
+```text
+http://localhost:5173
+```
+
+---
+
+## 4. Add Inspection Video
+
+Place source footage inside:
+
+```text
+data/raw_videos/
+```
+
+Example:
+
+```text
+data/raw_videos/master_video.mp4
+```
+
+---
+
+# 🧪 Standalone Perception Pipeline
+
+The AI pipeline can also be tested without the dashboard:
 
 ```bash
 python src/run_perception.py data/raw_videos/master_video.mp4
 ```
 
----
+Useful for:
 
-## 🔌 API Reference
-
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/health` | System health + current stream status |
-| `GET` | `/api/stream/start` | Starts the AI pipeline on a video (defaults to auto-resolved master video) |
-| `GET` | `/api/stream/stop` | Stops the stream and resets state |
-| `GET` | `/api/hazards` | Current cumulative hazard state (JSON) |
-| `GET` | `/api/hazards/geojson` | All hazards as a GeoJSON `FeatureCollection` |
-| `POST` | `/api/hazards/status` | Update a hazard's ticket status (`OPEN` / `IN_PROGRESS` / `RESOLVED`) |
-| `GET` | `/api/config` | Camera intrinsics + severity threshold configuration |
-| `GET` | `/api/debug/video-path` | Diagnostic: confirms which video file was resolved and whether it opens correctly |
-| `WS` | `/ws/live-stream` | Live hazard broadcast — subscribe here for real-time dashboard updates |
-
-Interactive Swagger docs are auto-generated by FastAPI at `http://localhost:8000/docs`.
+- AI model testing
+- Detection validation
+- Pipeline debugging
+- Performance testing
 
 ---
 
-## 📊 Severity & Risk Model
+# 💻 Development Hardware
 
-| Level | Affected Area | Recommended Action |
-|---|---:|---|
-| 🟢 LOW | < 5 m² | Monitor routine conditions |
-| 🟡 MODERATE | 5 – 25 m² | Schedule standard maintenance check |
-| 🟠 HIGH | 25 – 75 m² | Dispatch local maintenance crew |
-| 🔴 CRITICAL | ≥ 75 m² | Issue emergency response and traffic reroute |
+Primary development/demo environment:
 
-Priority scores (1–100) additionally weight hazard type — waterlogging and open manholes score higher than equivalent-area cracks, reflecting real safety risk.
-
-## 💻 Development & Runtime Environment
-
-Built and demoed on:
-
-| Component | Spec |
+| Component | Specification |
 |---|---|
 | GPU | NVIDIA RTX 4060 |
-| CPU | Intel i9-14900HX |
-| RAM | 16 GB+ recommended (pipeline + browser + IDE running concurrently) |
-| OS | Windows 11 (PowerShell / VS Code) |
+| CPU | Intel Core i9-14900HX |
+| RAM | 16 GB+ recommended |
+| OS | Windows 11 |
 | Python | 3.11 |
 
-> These specs reflect the demo machine, not a hard requirement — the pipeline runs on CPU as well, at a lower FPS. YOLOv8 will automatically use CUDA if a compatible GPU + PyTorch build is detected, and fall back to CPU otherwise.
+CUDA acceleration is used when a compatible NVIDIA GPU and PyTorch/CUDA environment are available.
 
 ---
 
-## 📊 Observed Performance
+# 📈 Observed Performance
 
-Measured live during development on the hardware above, running the full FastAPI + WebSocket + dashboard pipeline end-to-end (not just raw model inference):
+During development, the complete local AI + FastAPI + WebSocket + dashboard pipeline achieved approximately:
 
 | Metric | Observed |
 |---|---:|
-| Processing rate | ~30 FPS on 1080p footage |
-| Detection confidence threshold | 0.25 (tuned to catch marginal/partial hazards) |
-| End-to-end latency (frame → dashboard update) | Sub-second over local WebSocket |
+| Processing Rate | ~30 FPS |
+| Input | 1080p footage |
+| Detection Confidence | 0.25 |
+| Dashboard Latency | Sub-second |
 
-> These are real numbers from our own test runs on the hardware above, not vendor benchmarks — expect them to vary with video resolution, hazard density per frame, and whether GPU acceleration is active.
+Performance varies depending on:
 
----
-
-| Typical Pothole-Detection Demo | HYDRO-VISION-3D |
-|---|---|
-| Bounding box only | Bounding box **+ persistent tracking ID** across frames |
-| Pixel-space output | Converted to **real-world m²** |
-| One-shot detection | **EMA-smoothed** continuous tracking, avoids flicker/double-count |
-| No location context | Auto-mapped to **municipal ward zones** |
-| No workflow | Full **ticket lifecycle** (open → in progress → resolved) via API |
-| Static report | **Live WebSocket dashboard** — updates as the video plays |
+- GPU configuration
+- Video resolution
+- Model workload
+- Number of hazards per frame
+- Depth processing
+- System resources
 
 ---
 
-## 🛣 Roadmap
+# ✅ Current Implementation
 
-- ✅ Real-time detection + tracking pipeline
-- ✅ Live WebSocket dashboard (7 pages: Overview, Map, Detections, Alerts, Risk, Volumetrics, Stream Control)
-- ✅ GeoJSON export + REST API
-- ✅ Automated severity & priority scoring
-- ⬜ Persistent database (PostGIS) for historical trend analysis
-- ⬜ Monocular depth estimation for volumetric (m³) water/pothole estimates
-- ⬜ Multi-camera / multi-zone concurrent ingestion
-- ⬜ Mobile field-crew app for ticket resolution
+## AI & Computer Vision
 
----
+- [x] YOLO hazard detection
+- [x] Custom hazard classification
+- [x] Persistent object tracking
+- [x] Confidence filtering
+- [x] OpenCV video processing
+- [x] Depth Anything V2
+- [x] CUDA-accelerated inference
+- [x] Depth-based spatial analysis
+- [x] Volumetric estimation
 
-## 📸 Dashboard Screenshots
+## Spatial Intelligence
 
-> **Screenshot checklist** — capture each page below at `1920×1080`, save into `docs/screenshots/` using the exact filenames shown, and they will render automatically wherever this README is viewed on GitHub.
+- [x] Pixel-to-real-world area estimation
+- [x] Camera geometry
+- [x] GSD-based measurement
+- [x] GPS/WGS84 representation
+- [x] Geospatial projection
+- [x] Municipal zone assignment
+- [x] GeoJSON export
+- [x] GIS visualization
 
-| # | Page | Filename |
-|---|---|---|
-| 1 | Infrastructure Overview (main dashboard) | `docs/screenshots/01-dashboard-overview.png` |
-| 2 | GIS Hazard Map (Vadodara, live markers) | `docs/screenshots/02-gis-map.png` |
-| 3 | Live Detections table | `docs/screenshots/03-detections.png` |
-| 4 | Alerts & Incidents | `docs/screenshots/04-alerts.png` |
-| 5 | Risk Engine | `docs/screenshots/05-risk-engine.png` |
-| 6 | Volumetrics | `docs/screenshots/06-DepthAnalysis.png` |
+## Analytics & Risk
 
-<p align="center">
-  <img src="docs/screenshots/01-dashboard-overview.png" width="800" alt="Dashboard Overview" />
-</p>
+- [x] EMA smoothing
+- [x] Severity classification
+- [x] Risk/priority scoring
+- [x] Session timeline
+- [x] Severity distribution
+- [x] Hazard classification analytics
+- [x] Cumulative area/volume metrics
 
-<p align="center">
-  <img src="docs/screenshots/02-gis-map.png" width="800" alt="GIS Hazard Map" />
-</p>
+## Ground Control Station
 
-<p align="center">
-  <img src="docs/screenshots/03-detections.png" width="800" alt="Live Detections" />
-</p>
+- [x] React/Vite GCS
+- [x] Recorded Video Analysis Mode
+- [x] Live Drone Feed Mode
+- [x] Live OSD
+- [x] Hazard Feed
+- [x] Mission Status
+- [x] Risk Score Gauge
+- [x] Analytics Dashboard
+- [x] GIS Map
+- [x] Alerts
+- [x] Stream Control
+- [x] Session reset handling
 
-<p align="center">
-  <img src="docs/screenshots/04-alerts.png" width="800" alt="Alerts & Incidents" />
-</p>
+## Operations & Cloud
 
-<p align="center">
-  <img src="docs/screenshots/05-risk-engine.png" width="800" alt="Risk Engine" />
-</p>
-
-<p align="center">
-  <img src="docs/screenshots/06-DepthAnalysis.png" width="800" alt="DepthAnalysis" />
-</p>
-
----
-
-## 👥 Team
-
-**Team Drone404** — built for the ELCIA Tech Summit 2026 Hackathon.
-
----
-
-## 🤝 Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/your-feature`)
-3. Commit your changes
-4. Open a Pull Request
+- [x] Real-time WebSocket communication
+- [x] REST API
+- [x] Visual evidence snapshots
+- [x] Maintenance ticket lifecycle
+- [x] Supabase integration
+- [x] PostgreSQL persistence
+- [x] Asynchronous cloud synchronization
 
 ---
 
-<p align="center"><sub>HYDRO-VISION-3D — AI-Powered Infrastructure Intelligence for Smart Cities</sub></p>
+# 🔮 Future Scope
+
+The platform can be extended toward a city-scale infrastructure intelligence system with:
+
+- Multi-drone simultaneous monitoring
+- Persistent PostGIS infrastructure database
+- Historical hazard intelligence
+- Predictive road deterioration
+- Automated municipal work-order generation
+- Mobile application for field crews
+- Follow-up drone-based repair verification
+- Multi-zone concurrent monitoring
+- Infrastructure digital twins
+
+---
+
+# 🏆 Why HYDRO-VISION-3D?
+
+A conventional computer-vision system might simply report:
+
+```text
+"Pothole detected."
+```
+
+HYDRO-VISION-3D aims to produce:
+
+```text
+WHAT
+Pothole / Waterlogging / Infrastructure Hazard
+
+WHERE
+GPS + Municipal Zone
+
+WHEN
+Timestamp + Mission Timeline
+
+HOW LARGE
+Estimated Area (m²)
+
+HOW DEEP / EXTENSIVE
+Depth + Estimated Volume (m³)
+
+HOW SEVERE
+Severity Level
+
+HOW URGENT
+Priority / Risk Score
+
+EVIDENCE
+Visual Snapshot
+
+WHAT NEXT
+Maintenance Recommendation
+
+STATUS
+OPEN → IN_PROGRESS → RESOLVED
+```
+
+The core philosophy is:
+
+# **DETECT → QUANTIFY → LOCATE → ASSESS → PRIORITIZE → ACT**
+
+This transforms inspection video from passive visual information into a **real-time infrastructure intelligence and maintenance decision-support system**.
+
+---
+
+# 🌆 Real-World Applications
+
+### 🚧 Municipal Road Maintenance
+
+Automatically identify and prioritize road hazards for maintenance teams.
+
+### 🌧️ Post-Monsoon & Flood Assessment
+
+Rapidly identify waterlogged and damaged road sections after heavy rainfall.
+
+### 🚰 Drainage Monitoring
+
+Identify drainage overflow and recurring water accumulation zones.
+
+### 🏙️ Smart City Planning
+
+Build spatial and historical intelligence around recurring infrastructure failures.
+
+### 👷 Maintenance Dispatch
+
+Provide crews with:
+
+```text
+Location
++
+Severity
++
+Area
++
+Volume
++
+Priority
++
+Evidence
++
+Recommended Action
+```
+
+instead of requiring manual interpretation of raw footage.
+
+---
+
+# 🌍 Long-Term Vision
+
+Our long-term objective is to create a continuously updated **digital infrastructure intelligence layer for cities**.
+
+```text
+Drone Missions
+      ↓
+AI Perception
+      ↓
+Persistent Hazard Database
+      ↓
+GIS Infrastructure Intelligence
+      ↓
+Historical Risk Analysis
+      ↓
+Predictive Maintenance
+      ↓
+Automated Work Orders
+      ↓
+Field Crew Action
+      ↓
+Repair Verification
+      ↓
+Updated Infrastructure State
+```
+
+This enables a transition from:
+
+**Reactive → Preventive**
+
+**Manual → Autonomous**
+
+**Subjective → Quantified**
+
+**Disconnected → Geo-Spatial**
+
+**Detection → Action**
+
+---
+
+# 👥 Team
+
+## Team Drone404
+
+**ELCIA Tech Summit 2026 Hackathon**  
+**GSFC University**
+
+**Lead Developer:** Krishay Mayur Shah
+
+---
+
+<p align="center">
+
+# 🌊 HYDRO-VISION-3D
+
+### **See the hazard. Quantify the impact. Locate the problem. Prioritize the response.**
+
+**AI-Powered Infrastructure Intelligence for Smarter, Safer Cities.**
+
+</p>
+
+<p align="center">
+
+Built by **Team Drone404** for the **ELCIA Tech Summit 2026 Hackathon**.
+
+</p>
