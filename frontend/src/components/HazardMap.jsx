@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useStore, CONFIG } from '../store.js';
 import L from 'leaflet';
+import 'leaflet/dist/leaflet.css';
 
+// Fix default Leaflet icon path issues
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
   iconRetinaUrl: 'https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png',
@@ -41,14 +43,22 @@ export default function HazardMap({ fullpage = false }) {
   const droneMarkerRef = useRef(null);
 
   const [activeLayer, setActiveLayer] = useState('google-hybrid');
-  const { hazards, telemetry, currentPage } = useStore();
+  const { hazards = [], telemetry = {}, currentPage } = useStore();
+
+  // Helper to extract coordinates safely from various backend payload structures
+  const extractCoords = (h) => {
+    const lat = Number(h.latitude ?? h.lat ?? h.location?.latitude);
+    const lon = Number(h.longitude ?? h.lng ?? h.location?.longitude);
+    if (isNaN(lat) || isNaN(lon)) return null;
+    return { lat, lon };
+  };
 
   // Initialize Map
   useEffect(() => {
-    if (mapInstanceRef.current) return;
+    if (mapInstanceRef.current || !mapRef.current) return;
 
     const map = L.map(mapRef.current, {
-      center: [CONFIG.CENTER_LAT, CONFIG.CENTER_LON],
+      center: [CONFIG.CENTER_LAT || 22.3072, CONFIG.CENTER_LON || 73.1812],
       zoom: 17,
       zoomControl: false,
       attributionControl: false,
@@ -64,6 +74,11 @@ export default function HazardMap({ fullpage = false }) {
     mapInstanceRef.current = map;
     setTimeout(() => map.invalidateSize(), 100);
     setTimeout(() => map.invalidateSize(), 400);
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+    };
   }, []);
 
   // Fix Leaflet container sizing when switching tabs in Single Page App
@@ -107,36 +122,34 @@ export default function HazardMap({ fullpage = false }) {
     }).addTo(map);
   }, [activeLayer]);
 
-  // Update Hazard Markers
+  // Update Hazard Markers in Real-Time
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
     const markers = markersRef.current;
-    const valid = hazards.filter(h => h.location?.latitude && h.location?.longitude);
-    const currentIds = new Set(valid.map(h => h.track_id));
 
-    for (const [id, marker] of markers) {
-      if (!currentIds.has(id)) {
-        map.removeLayer(marker);
-        markers.delete(id);
-      }
-    }
+    const currentIds = new Set();
 
-    valid.forEach(h => {
+    hazards.forEach((h, index) => {
+      const coords = extractCoords(h);
+      if (!coords) return;
+
+      const hazardId = h.track_id || h.hazard_id || `HAZ-${index}`;
+      currentIds.add(hazardId);
+
       const className = h.class_name || h.type || 'pothole_dry';
-      const color = CONFIG.TYPE_COLORS[className] || CONFIG.TYPE_COLORS[h.type] || '#10b981';
+      const color = CONFIG.TYPE_COLORS?.[className] || CONFIG.TYPE_COLORS?.[h.type] || '#10b981';
       const confidenceStr = `${((h.confidence ?? 0.95) * 100).toFixed(1)}%`;
-      const volumeStr = `${Number(h.estimated_volume_m3 || 0.05).toFixed(2)} m³`;
+      const volumeStr = `${Number(h.estimated_volume_m3 || h.volume_m3 || 0.05).toFixed(2)} m³`;
       const detectionsStr = `${h.detections_count || 1} frame passes`;
-      const hazardId = h.hazard_id || `HAZ-${String(h.track_id).padStart(4, '0')}`;
-      const radius = Math.max(7, Math.min(18, (Number(h.estimated_volume_m3) || 0.1) * 35));
+      const radius = Math.max(7, Math.min(18, (Number(h.estimated_volume_m3 || h.volume_m3) || 0.1) * 35));
 
       const popup = `
         <div style="min-width:185px;font-family:'Segoe UI',sans-serif;font-size:12px;color:#0f172a;padding:2px">
           <div style="font-weight:800;color:${color};font-size:13px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e2e8f0;padding-bottom:4px">
             <span style="display:flex;align-items:center;gap:6px">
-              <span style="background:${color};color:#ffffff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700">${CONFIG.TYPE_ICONS[className] || CONFIG.TYPE_ICONS[h.type] || 'DEFECT'}</span>
-              <span>${(CONFIG.TYPE_LABELS[className] || className).toUpperCase()}</span>
+              <span style="background:${color};color:#ffffff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700">${CONFIG.TYPE_ICONS?.[className] || 'DEFECT'}</span>
+              <span>${(CONFIG.TYPE_LABELS?.[className] || className).toUpperCase()}</span>
             </span>
             <span style="font-size:10px;color:#64748b;font-family:monospace">${hazardId}</span>
           </div>
@@ -146,19 +159,19 @@ export default function HazardMap({ fullpage = false }) {
             <div><span style="color:#64748b;font-weight:600">Estimated Volume:</span> <strong>${volumeStr}</strong></div>
             <div><span style="color:#64748b;font-weight:600">Detection Count:</span> <strong>${detectionsStr}</strong></div>
             <div style="font-family:monospace;color:#64748b;margin-top:4px;font-size:10px;border-top:1px dashed #cbd5e1;padding-top:3px">
-              GPS: ${h.location.latitude.toFixed(6)}, ${h.location.longitude.toFixed(6)}
+              GPS: ${coords.lat.toFixed(6)}, ${coords.lon.toFixed(6)}
             </div>
           </div>
         </div>
       `;
 
-      if (markers.has(h.track_id)) {
-        const m = markers.get(h.track_id);
-        m.setLatLng([h.location.latitude, h.location.longitude]);
+      if (markers.has(hazardId)) {
+        const m = markers.get(hazardId);
+        m.setLatLng([coords.lat, coords.lon]);
         m.setPopupContent(popup);
         m.setStyle({ color: '#ffffff', fillColor: color, radius: radius });
       } else {
-        const m = L.circleMarker([h.location.latitude, h.location.longitude], {
+        const m = L.circleMarker([coords.lat, coords.lon], {
           radius: radius,
           fillColor: color,
           fillOpacity: 0.85,
@@ -166,9 +179,17 @@ export default function HazardMap({ fullpage = false }) {
           weight: 2.5,
           opacity: 1,
         }).addTo(map).bindPopup(popup);
-        markers.set(h.track_id, m);
+        markers.set(hazardId, m);
       }
     });
+
+    // Remove old markers that are no longer in state
+    for (const [id, marker] of markers) {
+      if (!currentIds.has(id)) {
+        map.removeLayer(marker);
+        markers.delete(id);
+      }
+    }
   }, [hazards]);
 
   // Live Drone Position Marker
@@ -211,7 +232,7 @@ export default function HazardMap({ fullpage = false }) {
         <div style="font-family:'Segoe UI',sans-serif;font-size:12px;font-weight:700">
           LIVE DRONE POSITION<br/>
           <span style="font-size:11px;color:#64748b;font-weight:normal">
-            ALT: ${telemetry.altitude.toFixed(1)}m | SPD: ${telemetry.speed.toFixed(1)}m/s
+            ALT: ${Number(telemetry.altitude || 25).toFixed(1)}m | SPD: ${Number(telemetry.speed || 0).toFixed(1)}m/s
           </span>
         </div>
       `);
@@ -228,9 +249,8 @@ export default function HazardMap({ fullpage = false }) {
       points.push([telemetry.latitude, telemetry.longitude]);
     }
     hazards.forEach(h => {
-      if (h.location?.latitude && h.location?.longitude) {
-        points.push([h.location.latitude, h.location.longitude]);
-      }
+      const coords = extractCoords(h);
+      if (coords) points.push([coords.lat, coords.lon]);
     });
 
     if (points.length > 1) {
@@ -238,7 +258,7 @@ export default function HazardMap({ fullpage = false }) {
     } else if (points.length === 1) {
       map.setView(points[0], 18);
     } else {
-      map.setView([CONFIG.CENTER_LAT, CONFIG.CENTER_LON], 17);
+      map.setView([CONFIG.CENTER_LAT || 22.3072, CONFIG.CENTER_LON || 73.1812], 17);
     }
   };
 
@@ -278,7 +298,7 @@ export default function HazardMap({ fullpage = false }) {
             key={key}
             onClick={() => setActiveLayer(key)}
             style={{
-              background: activeLayer === key ? 'var(--amber)' : 'transparent',
+              background: activeLayer === key ? '#ffbb00' : 'transparent',
               color: activeLayer === key ? '#1a1a1a' : '#cccccc',
               border: 'none',
               borderRadius: 4,
@@ -319,7 +339,6 @@ export default function HazardMap({ fullpage = false }) {
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
-            fontSize: '1rem',
             cursor: 'pointer',
             boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
           }}

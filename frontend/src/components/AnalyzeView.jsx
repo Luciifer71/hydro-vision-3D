@@ -1,11 +1,11 @@
+import React from 'react';
 import { Line, Doughnut, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
   ArcElement, BarElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js';
-import { useStore, CONFIG } from '../store.js';
+import { useStore, CONFIG, severityFromArea } from '../store.js';
 import HazardMap from './HazardMap.jsx';
-import { useLiveHazards } from '../hooks/useLiveHazards'; // 🟢 Live Supabase Hook
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, BarElement, Title, Tooltip, Legend, Filler);
 
@@ -20,7 +20,7 @@ ChartJS.defaults.maintainAspectRatio = false;
 const CHART_OPTS = {
   timeline: {
     scales: {
-      x: { grid: { display: false }, ticks: { maxTicksLimit: 6, font: { size: 10 } } },
+      x: { grid: { display: false }, ticks: { maxTicksLimit: 8, font: { size: 10 } } },
       y: { beginAtZero: true, grid: { color: 'rgba(255,255,255,0.04)' }, ticks: { font: { size: 10 } } },
     },
     plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(30,30,30,0.95)', cornerRadius: 4 } },
@@ -40,76 +40,130 @@ const CHART_OPTS = {
   },
 };
 
-function severityFromArea(a) {
-  a = Number(a) || 0;
-  if (a >= 0.3) return 'CRITICAL'; 
-  if (a >= 0.15) return 'HIGH'; 
-  if (a >= 0.05) return 'MODERATE'; 
-  return 'LOW';
-}
-
 export default function AnalyzeView() {
-  // 🟢 1. Local State for UI histories
-  const { timelineHistory, riskHistory, currentState } = useStore();
-  
-  // 🟢 2. Live Data from Supabase Cloud
-  const { hazards } = useLiveHazards(); 
+  const { timelineHistory = [], riskHistory = [], currentState, hazards = [], streamRunning } = useStore();
 
+  // Timeline chart dataset
   const timelineData = {
-    labels: timelineHistory.map(d => d.time),
+    labels: timelineHistory.length > 0 ? timelineHistory.map(d => d.time) : ['00:00'],
     datasets: [{
-      label: 'Active Hazards', data: timelineHistory.map(d => d.count),
-      borderColor: '#ffbb00', backgroundColor: 'rgba(255,187,0,0.1)',
-      borderWidth: 2, fill: true, tension: 0.4, pointRadius: 0,
+      label: 'Active Hazards',
+      data: timelineHistory.length > 0 ? timelineHistory.map(d => d.count) : [0],
+      borderColor: '#ffbb00',
+      backgroundColor: 'rgba(255,187,0,0.1)',
+      borderWidth: 2,
+      fill: true,
+      tension: 0.4,
+      pointRadius: 2,
     }],
   };
 
+  // Severity counts
   const sevCounts = { LOW: 0, MODERATE: 0, HIGH: 0, CRITICAL: 0 };
   hazards.forEach(h => { 
-    const s = severityFromArea(h.estimated_volume_m3); 
+    const s = h.severity || severityFromArea(h.surface_area_m2 || h.estimated_volume_m3);
     if (sevCounts[s] !== undefined) sevCounts[s]++; 
   });
   
   const sevData = {
     labels: ['Low', 'Moderate', 'High', 'Critical'],
-    datasets: [{ data: [sevCounts.LOW, sevCounts.MODERATE, sevCounts.HIGH, sevCounts.CRITICAL], backgroundColor: ['#10b981', '#ffbb00', '#ff8800', '#cc0000'], borderWidth: 0 }],
+    datasets: [{
+      data: [sevCounts.LOW, sevCounts.MODERATE, sevCounts.HIGH, sevCounts.CRITICAL],
+      backgroundColor: ['#10b981', '#ffbb00', '#ff8800', '#cc0000'],
+      borderWidth: 0,
+    }],
   };
 
-  const typeCounts = { pothole: 0, water_body: 0, crack: 0, flooding: 0 };
-  hazards.forEach(h => { 
-    const typeStr = h.class_name || '';
-    if (typeStr.includes('pothole')) typeCounts.pothole++;
-    else if (typeStr.includes('water') || typeStr.includes('drain')) typeCounts.water_body++;
-    else if (typeStr.includes('crack')) typeCounts.crack++;
-    else typeCounts.flooding++;
+  // Dynamic Hazard Classification
+const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
+  const typeCounts = {};
+  typeKeys.forEach(k => { typeCounts[k] = 0; });
+
+  // 🟢 FIX: Sort keys by length descending. 
+  // This forces 'pothole_waterlogged' to be checked before 'pothole'
+  const sortedTypeKeys = [...typeKeys].sort((a, b) => b.length - a.length);
+
+  hazards.forEach(h => {
+    const typeStr = (h.class_name || h.type || '').toLowerCase();
+    
+    // Search using the length-sorted array
+    const matchedKey = sortedTypeKeys.find(k => typeStr.includes(k));
+    
+    if (matchedKey) {
+      typeCounts[matchedKey]++;
+    } else if (typeKeys.length > 0) {
+      typeCounts[typeKeys[0]]++; // Safe fallback
+    }
   });
-  
+
   const typeData = {
-    labels: ['Pothole', 'Water Body', 'Crack', 'Flooding'],
-    datasets: [{ data: [typeCounts.pothole, typeCounts.water_body, typeCounts.crack, typeCounts.flooding], backgroundColor: ['rgba(204,0,0,0.7)', 'rgba(255,187,0,0.7)', 'rgba(255,136,0,0.7)', 'rgba(170,85,255,0.7)'], borderColor: ['#cc0000', '#ffbb00', '#ff8800', '#aa55ff'], borderWidth: 1, borderRadius: 3 }],
+    labels: typeKeys.map(k => CONFIG.TYPE_LABELS[k]),
+    datasets: [{
+      data: typeKeys.map(k => typeCounts[k]),
+      backgroundColor: typeKeys.map(k => CONFIG.TYPE_COLORS[k] || 'rgba(255,187,0,0.7)'),
+      borderColor: typeKeys.map(k => CONFIG.TYPE_COLORS[k] || '#ffbb00'),
+      borderWidth: 1,
+      borderRadius: 3
+    }],
   };
 
   const riskData = {
-    labels: riskHistory.map(d => d.time),
-    datasets: [{ label: 'Risk Score', data: riskHistory.map(d => d.score), borderColor: '#ff8800', backgroundColor: 'rgba(255,136,0,0.1)', borderWidth: 2, fill: true, tension: 0.4, pointRadius: 0 }],
+    labels: riskHistory.length > 0 ? riskHistory.map(d => d.time) : ['00:00'],
+    datasets: [{
+      label: 'Risk Score',
+      data: riskHistory.length > 0 ? riskHistory.map(d => d.score) : [0],
+      borderColor: '#ff8800',
+      backgroundColor: 'rgba(255,136,0,0.1)',
+      borderWidth: 2,
+      fill: true,
+      tension: 0.4,
+      pointRadius: 2,
+    }],
   };
 
-  // Derive total live volume
-  const totalArea = hazards.reduce((acc, curr) => acc + (curr.estimated_volume_m3 || 0), 0);
-  const riskLevel = totalArea > 2.0 ? 'CRITICAL' : (totalArea > 0.5 ? 'HIGH' : 'LOW');
-  const riskScore = currentState?.summary?.risk_score || 1;
+  // Derived metrics
+  const totalVolume = hazards.reduce((acc, curr) => acc + (Number(curr.estimated_volume_m3 || curr.surface_area_m2) || 0), 0);
+  const summary = currentState?.summary || {};
+  const riskLevel = summary.overall_risk || summary.risk_level || (totalVolume > 2.0 ? 'CRITICAL' : 'LOW');
+  
+  // FIX: Gauge value capped between 0 and 100 directly without 25x multiplier
+  const rawRiskScore = summary.risk_score !== undefined ? summary.risk_score : (riskLevel === 'CRITICAL' ? 100 : 25);
+  const riskScoreDisplay = Math.min(100, Math.max(0, Math.round(rawRiskScore)));
 
   const sevColors = { LOW: '#10b981', MODERATE: '#ffbb00', HIGH: '#ff8800', CRITICAL: '#cc0000' };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      {/* Session Summary Banner */}
+      <div style={{ background: '#1e1e1e', border: '1px solid #333', padding: '10px 15px', borderRadius: 6, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div>
+          <span style={{ fontSize: '0.75rem', fontWeight: 800, color: '#ffbb00', letterSpacing: 1 }}>
+            {streamRunning ? 'PROCESSING STREAM TELEMETRY' : 'MISSION COMPLETE — POST-VIDEO ANALYSIS REPORT'}
+          </span>
+          <div style={{ fontSize: '0.65rem', color: '#888', marginTop: 2 }}>
+            {streamRunning ? '● Active AI pipeline analyzing drone footage...' : '✔ Video analysis finished. All spatial markers, volumes, and severity logs locked below.'}
+          </div>
+        </div>
+        <div style={{ 
+          fontSize: '0.7rem', 
+          fontFamily: 'var(--font-mono)', 
+          background: streamRunning ? 'rgba(16,185,129,0.15)' : 'rgba(255,187,0,0.15)', 
+          color: streamRunning ? '#10b981' : '#ffbb00', 
+          padding: '3px 10px', 
+          borderRadius: 4, 
+          border: streamRunning ? '1px solid #10b981' : '1px solid #ffbb00' 
+        }}>
+          {streamRunning ? 'RECORDING' : 'REPORT READY'}
+        </div>
+      </div>
+
       {/* KPI Row */}
       <div className="kpi-grid">
         {[
-          { label: 'Active Hazards', value: hazards.length },
-          { label: 'Total Estimated Volume', value: `${totalArea.toFixed(2)} m³` },
-          { label: 'Overall Risk', value: riskLevel, color: sevColors[riskLevel] },
-          { label: 'Active Alerts', value: currentState?.summary?.alert_count || 0 },
+          { label: 'Total Recorded Hazards', value: hazards.length },
+          { label: 'Cumulative Volume', value: `${totalVolume.toFixed(2)} m³` },
+          { label: 'Session Risk Level', value: riskLevel, color: sevColors[riskLevel] },
+          { label: 'Active Alerts', value: summary.alert_count || hazards.length },
         ].map(({ label, value, color }) => (
           <div className="kpi-card" key={label}>
             <span className="kpi-label">{label}</span>
@@ -121,8 +175,8 @@ export default function AnalyzeView() {
       {/* Timeline Chart */}
       <div className="card">
         <div className="card-header">
-          <span className="card-title">Hazard Detection Timeline</span>
-          <span className="card-badge badge-live">● Live</span>
+          <span className="card-title">Session Hazard Detection Timeline</span>
+          <span className="card-badge badge-live">● Persistent Log</span>
         </div>
         <div className="card-body"><div className="chart-wrap"><Line data={timelineData} options={CHART_OPTS.timeline} /></div></div>
       </div>
@@ -159,11 +213,11 @@ export default function AnalyzeView() {
           <div className="card-body">
             <div className="chart-wrap sm" style={{ position: 'relative' }}>
               <Doughnut
-                data={{ datasets: [{ data: [riskScore * 25, 100 - riskScore * 25], backgroundColor: [sevColors[riskLevel], 'rgba(255,255,255,0.05)'], borderWidth: 0, circumference: 240, rotation: 240 }] }}
+                data={{ datasets: [{ data: [riskScoreDisplay, 100 - riskScoreDisplay], backgroundColor: [sevColors[riskLevel], 'rgba(255,255,255,0.05)'], borderWidth: 0, circumference: 240, rotation: 240 }] }}
                 options={{ cutout: '78%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, events: [] }}
               />
               <div className="gauge-center">
-                <div className="gauge-val" style={{ color: sevColors[riskLevel] }}>{riskScore * 25}</div>
+                <div className="gauge-val" style={{ color: sevColors[riskLevel] }}>{riskScoreDisplay}</div>
                 <span className={`sev-badge ${riskLevel.toLowerCase()}`}>{riskLevel}</span>
               </div>
             </div>
@@ -176,42 +230,44 @@ export default function AnalyzeView() {
         <div className="card">
           <div className="card-header">
             <span className="card-title">GIS Hazard Map</span>
-            <span className="card-badge badge-live">● Live</span>
+            <span className="card-badge badge-live">● Session Logged</span>
           </div>
           <HazardMap />
         </div>
         <div className="card">
           <div className="card-header">
-            <span className="card-title">Live Hazard Feed</span>
-            <span className="card-badge badge-live">● Streaming Cloud Data</span>
+            <span className="card-title">Recorded Hazard Log</span>
+            <span className="card-badge badge-live">● Complete History</span>
           </div>
           <div className="table-wrap" style={{ maxHeight: 380 }}>
             <table className="data-table">
-              <thead><tr><th>Time</th><th>Type</th><th>Location</th><th>Volume m³</th><th>Conf.</th><th>Severity</th></tr></thead>
+              <thead><tr><th>ID</th><th>Type</th><th>Location</th><th>Volume m³</th><th>Conf.</th><th>Severity</th></tr></thead>
               <tbody>
-                {[...hazards].sort((a, b) => (b.estimated_volume_m3 || 0) - (a.estimated_volume_m3 || 0)).slice(0, 15).map((h, i) => {
-                  const vol = Number(h.estimated_volume_m3) || 0;
-                  const sev = severityFromArea(vol).toLowerCase();
-                  const lat = h.latitude;
-                  const lon = h.longitude;
-                  const t = h.last_detected ? new Date(h.last_detected).toLocaleTimeString('en-US', { hour12: false }) : '--:--:--';
-                  
-                  // Map raw class name to formatted label
-                  const formattedType = (h.class_name || 'unknown').replace('_', ' ').toUpperCase();
+                {hazards.length === 0 ? (
+                  <tr><td colSpan="6" style={{ textAlign: 'center', color: '#666', padding: '20px' }}>No session data recorded yet. Upload video to begin tracking.</td></tr>
+                ) : (
+                  [...hazards].map((h, i) => {
+                    const vol = Number(h.estimated_volume_m3 || h.surface_area_m2) || 0;
+                    const sev = (h.severity || severityFromArea(vol)).toLowerCase();
+                    const loc = h.location || {};
+                    const lat = loc.latitude ?? h.latitude;
+                    const lon = loc.longitude ?? h.longitude;
+                    const formattedType = (h.class_name || h.type || 'unknown').replace('_', ' ').toUpperCase();
 
-                  return (
-                    <tr key={`${h.hazard_id}-${i}`}>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: '#666' }}>{t}</td>
-                      <td><span className="type-badge" style={{ backgroundColor: '#222' }}>{formattedType}</span></td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: '#666' }}>
-                        {typeof lat === 'number' ? lat.toFixed(4) : '—'}, {typeof lon === 'number' ? lon.toFixed(4) : '—'}
-                      </td>
-                      <td>{vol.toFixed(3)}</td>
-                      <td>{((h.confidence ?? 1) * 100).toFixed(1)}%</td>
-                      <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
-                    </tr>
-                  );
-                })}
+                    return (
+                      <tr key={`${h.hazard_id || i}-${i}`}>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: '#ffbb00' }}>{h.hazard_id || `HAZ-${i}`}</td>
+                        <td><span className="type-badge" style={{ backgroundColor: '#222' }}>{formattedType}</span></td>
+                        <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: '#666' }}>
+                          {typeof lat === 'number' ? lat.toFixed(4) : '—'}, {typeof lon === 'number' ? lon.toFixed(4) : '—'}
+                        </td>
+                        <td>{vol.toFixed(3)}</td>
+                        <td>{(((h.confidence ?? 0.95) * 100)).toFixed(1)}%</td>
+                        <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
@@ -220,7 +276,7 @@ export default function AnalyzeView() {
 
       {/* Risk Timeline */}
       <div className="card">
-        <div className="card-header"><span className="card-title">Risk Score Over Time</span></div>
+        <div className="card-header"><span className="card-title">Risk Score Over Time (Session Trend)</span></div>
         <div className="card-body">
           <div className="chart-wrap">
             <Line data={riskData} options={{ ...CHART_OPTS.timeline, scales: { ...CHART_OPTS.timeline.scales, y: { ...CHART_OPTS.timeline.scales.y, max: 100 } } }} />
@@ -229,4 +285,4 @@ export default function AnalyzeView() {
       </div>
     </div>
   );
-}                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            
+}

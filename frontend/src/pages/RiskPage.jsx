@@ -1,32 +1,61 @@
+import React from 'react';
 import { Line, Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js';
-import { useStore, CONFIG } from '../store.js';
+import { useStore } from '../store.js';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler);
 
+// 🟢 Optimization: Disable chart animations for real-time streaming performance
+ChartJS.defaults.animation.duration = 0;
+
 function severityFromArea(a) {
-  a = Number(a) || 0;
-  if (a >= 75) return 'CRITICAL'; if (a >= 25) return 'HIGH'; if (a >= 5) return 'MODERATE'; return 'LOW';
+  const area = Number(a) || 0;
+  if (area >= 75) return 'CRITICAL'; 
+  if (area >= 25) return 'HIGH'; 
+  if (area >= 5) return 'MODERATE'; 
+  return 'LOW';
 }
 
 export default function RiskPage() {
-  const { hazards, riskHistory, currentState } = useStore();
-  const riskLevel = currentState?.summary?.overall_risk || 'LOW';
+  const { hazards = [], riskHistory = [], currentState = {} } = useStore();
+  const riskLevel = currentState?.summary?.overall_risk || currentState?.summary?.risk_level || 'LOW';
+
+  // Fallback history data if empty so the chart renders cleanly
+  const safeHistory = riskHistory.length > 0 ? riskHistory : [{ time: '00:00', score: 25 }];
 
   const riskData = {
-    labels: riskHistory.map(d => d.time),
-    datasets: [{ label: 'Risk Score', data: riskHistory.map(d => d.score), borderColor: '#f97316', backgroundColor: 'rgba(249,115,22,0.12)', borderWidth: 2, fill: true, tension: 0.4, pointRadius: 0 }],
+    labels: safeHistory.map(d => d.time),
+    datasets: [{ 
+      label: 'Risk Score', 
+      data: safeHistory.map(d => d.score), 
+      borderColor: '#f97316', 
+      backgroundColor: 'rgba(249,115,22,0.12)', 
+      borderWidth: 2, 
+      fill: true, 
+      tension: 0.4, 
+      pointRadius: 0 
+    }],
   };
 
   const counts = { LOW: 0, MODERATE: 0, HIGH: 0, CRITICAL: 0 };
-  hazards.forEach(h => { const s = h.severity || severityFromArea(h.surface_area_m2); if (counts[s] !== undefined) counts[s]++; });
+  hazards.forEach(h => { 
+    const s = (h.severity || severityFromArea(h.estimated_volume_m3 || h.surface_area_m2)).toUpperCase(); 
+    if (counts[s] !== undefined) counts[s]++; 
+  });
+
   const pieData = {
-    labels: ['Low','Moderate','High','Critical'],
-    datasets: [{ data: [counts.LOW, counts.MODERATE, counts.HIGH, counts.CRITICAL], backgroundColor: ['#10b981','#f59e0b','#f97316','#ef4444'], borderColor: 'rgba(15,20,35,0.8)', borderWidth: 2 }],
+    labels: ['Low', 'Moderate', 'High', 'Critical'],
+    datasets: [{ 
+      data: [counts.LOW, counts.MODERATE, counts.HIGH, counts.CRITICAL], 
+      backgroundColor: ['#10b981', '#f59e0b', '#f97316', '#ef4444'], 
+      borderColor: 'rgba(15,20,35,0.8)', 
+      borderWidth: 2 
+    }],
   };
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Threshold Indexer Card */}
       <div className="card">
         <div className="card-header"><span className="card-title">Risk Engine — Severity Indexer</span></div>
         <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -45,21 +74,27 @@ export default function RiskPage() {
         </div>
       </div>
 
+      {/* Charts Grid */}
       <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
         <div className="card">
           <div className="card-header"><span className="card-title">Risk Distribution Over Time</span></div>
-          <div className="card-body"><div className="chart-wrap">
-            <Line data={riskData} options={{ scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 6, font: { size: 10 } } }, y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.04)' } } }, plugins: { legend: { display: false } }, interaction: { intersect: false, mode: 'index' }, responsive: true, maintainAspectRatio: false }} />
-          </div></div>
+          <div className="card-body">
+            <div className="chart-wrap" style={{ height: 220 }}>
+              <Line data={riskData} options={{ scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 6, font: { size: 10 } } }, y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.04)' } } }, plugins: { legend: { display: false } }, interaction: { intersect: false, mode: 'index' }, responsive: true, maintainAspectRatio: false }} />
+            </div>
+          </div>
         </div>
         <div className="card">
           <div className="card-header"><span className="card-title">Current Risk Breakdown</span></div>
-          <div className="card-body"><div className="chart-wrap">
-            <Pie data={pieData} options={{ plugins: { legend: { display: true, position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 }, padding: 8 } } }, responsive: true, maintainAspectRatio: false }} />
-          </div></div>
+          <div className="card-body">
+            <div className="chart-wrap" style={{ height: 220 }}>
+              <Pie data={pieData} options={{ plugins: { legend: { display: true, position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 }, padding: 8 } } }, responsive: true, maintainAspectRatio: false }} />
+            </div>
+          </div>
         </div>
       </div>
 
+      {/* Formula Card */}
       <div className="card">
         <div className="card-header"><span className="card-title">EMA Smoothing Formula</span></div>
         <div className="card-body">

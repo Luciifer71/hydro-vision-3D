@@ -45,8 +45,13 @@ function SensorIcon({ label, active }) {
 }
 
 export default function Header() {
-  const { currentPage, viewMode, setViewMode, connectionStatus, currentState, telemetry, connect, disconnect, uploadVideo, feedMode, switchToLiveFeed } = useStore();
+  const { 
+    currentPage, viewMode, setViewMode, connectionStatus, currentState, 
+    telemetry, connect, disconnect, uploadVideo, feedMode, switchToLiveFeed 
+  } = useStore();
+  
   const [time, setTime] = useState(new Date());
+  const [isProcessing, setIsProcessing] = useState(false); // Failsafe lock
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -54,20 +59,78 @@ export default function Header() {
     return () => clearInterval(t);
   }, []);
 
-  const hazards = useStore(state => state.hazards);
+  const hazards = useStore(state => state.hazards) || [];
   const alertCount = hazards.filter(h => {
     const s = (h.severity || 'LOW').toUpperCase();
     return s === 'CRITICAL' || s === 'HIGH' || s === 'MODERATE';
   }).length || currentState?.summary?.alert_count || 0;
+  
   const isDashboard = currentPage === 'dashboard';
   const isLive = feedMode === 'live';
-  const battPct = Math.round(telemetry.battery);
+  const battPct = Math.round(telemetry?.battery || 0);
   const battColor = battPct > 40 ? '#10b981' : battPct > 20 ? '#ffbb00' : '#cc0000';
 
-  const handleFileChange = (e) => {
+  // --- HARDWARE CONTROL API HANDLERS ---
+
+  const handleVideoUpload = async (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      uploadVideo(file);
+    if (!file) return;
+
+    setIsProcessing(true);
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      // 1. Push file to FastAPI backend
+      const response = await fetch('http://localhost:8000/api/upload-video', {
+        method: 'POST',
+        body: formData,
+      });
+
+      if (response.ok) {
+        console.log('[SYSTEM] Video uploaded and AI Pipeline initialized.');
+        // 2. Update frontend store
+        uploadVideo(file);
+        // 3. Force connect state since the backend automatically starts the stream on upload
+        connect(); 
+      } else {
+        console.error('[ERROR] Backend rejected the video file.');
+      }
+    } catch (error) {
+      console.error('[NETWORK ERROR] Failed to upload video:', error);
+    } finally {
+      setIsProcessing(false);
+      if (fileInputRef.current) fileInputRef.current.value = ''; // Reset input
+    }
+  };
+
+  const handleConnectStream = async () => {
+    setIsProcessing(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/stream/start', { method: 'POST' });
+      if (response.ok) {
+        console.log('[SYSTEM] Hardware stream activated.');
+        connect(); // Update UI
+      }
+    } catch (error) {
+      console.error('[NETWORK ERROR] Failed to start stream:', error);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleDisconnectStream = async () => {
+    setIsProcessing(true);
+    try {
+      const response = await fetch('http://localhost:8000/api/stream/stop', { method: 'POST' });
+      if (response.ok) {
+        console.log('[SYSTEM] Hardware stream halted. Entering standby.');
+        disconnect(); // Update UI
+      }
+    } catch (error) {
+      console.error('[NETWORK ERROR] Failed to stop stream:', error);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
@@ -93,13 +156,13 @@ export default function Header() {
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.7rem', color: battColor }}>{battPct}%</span>
         </div>
 
-        {/* Sensor status icons - Betaflight style */}
+        {/* Sensor status icons */}
         <div style={{ display: 'flex', gap: 10, padding: '0 8px', borderLeft: '1px solid #3a3a3a' }}>
           <SensorIcon label="Gyro" active={connectionStatus === 'LIVE'} />
           <SensorIcon label="Accel" active={connectionStatus === 'LIVE'} />
           <SensorIcon label="Mag" active={true} />
           <SensorIcon label="Baro" active={true} />
-          <SensorIcon label="GPS" active={telemetry.satellites >= 4 && isLive} />
+          <SensorIcon label="GPS" active={telemetry?.satellites >= 4 && isLive} />
           <SensorIcon label="Sonar" active={false} />
         </div>
 
@@ -129,18 +192,10 @@ export default function Header() {
             onClick={switchToLiveFeed}
             title="Return to real-time live drone flight feed and restore telemetry"
             style={{
-              background: 'linear-gradient(135deg, #10b981, #059669)',
-              color: '#1a1a1a',
-              fontWeight: 800,
-              padding: '4px 12px',
-              fontSize: '0.72rem',
-              borderRadius: 4,
-              cursor: 'pointer',
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 6,
-              border: 'none',
-              boxShadow: '0 0 8px rgba(16, 185, 129, 0.4)',
+              background: 'linear-gradient(135deg, #10b981, #059669)', color: '#1a1a1a',
+              fontWeight: 800, padding: '4px 12px', fontSize: '0.72rem', borderRadius: 4,
+              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+              border: 'none', boxShadow: '0 0 8px rgba(16, 185, 129, 0.4)',
             }}
           >
             <span>●</span>
@@ -148,9 +203,9 @@ export default function Header() {
           </button>
         ) : (
           <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5,
-            padding: '3px 8px', borderRadius: 4, background: 'rgba(16, 185, 129, 0.12)',
-            border: '1px solid rgba(16, 185, 129, 0.3)', color: '#10b981', fontSize: '0.68rem', fontWeight: 800
+            display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', 
+            borderRadius: 4, background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', 
+            color: '#10b981', fontSize: '0.68rem', fontWeight: 800
           }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
             LIVE DRONE FEED
@@ -161,32 +216,25 @@ export default function Header() {
           {connectionStatus === 'LIVE' ? '● LIVE' : connectionStatus === 'CONNECTING' ? '◌ CONNECTING' : connectionStatus === 'RECONNECTING' ? '↻ RECONNECTING' : '○ OFFLINE'}
         </div>
 
-        {/* Hidden File Input for Pre-recorded Video Upload */}
+        {/* Hidden File Input */}
         <input
           type="file"
           ref={fileInputRef}
-          accept="video/*"
+          accept="video/mp4"
           style={{ display: 'none' }}
-          onChange={handleFileChange}
+          onChange={handleVideoUpload}
         />
 
         {/* Upload Video Button */}
         <button
           className="btn btn-outline"
           onClick={() => fileInputRef.current?.click()}
+          disabled={isProcessing}
           title="Upload a pre-recorded drone flight video for AI analysis"
           style={{
-            background: 'rgba(255,187,0,0.12)',
-            border: '1px solid var(--amber)',
-            color: 'var(--amber)',
-            padding: '4px 12px',
-            fontSize: '0.72rem',
-            fontWeight: 700,
-            borderRadius: 4,
-            cursor: 'pointer',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 5,
+            background: 'rgba(255,187,0,0.12)', border: '1px solid var(--amber)', color: 'var(--amber)',
+            padding: '4px 12px', fontSize: '0.72rem', fontWeight: 700, borderRadius: 4, cursor: isProcessing ? 'not-allowed' : 'pointer',
+            display: 'inline-flex', alignItems: 'center', gap: 5, opacity: isProcessing ? 0.5 : 1
           }}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
@@ -194,17 +242,25 @@ export default function Header() {
             <polyline points="17 8 12 3 7 8"/>
             <line x1="12" y1="3" x2="12" y2="15"/>
           </svg>
-          Upload Video
+          {isProcessing ? 'UPLOADING...' : 'Upload Video'}
         </button>
 
         {connectionStatus === 'LIVE' ? (
-          <button className="btn" onClick={disconnect}
-            style={{ background: '#cc0000', color: '#fff', padding: '4px 12px', fontSize: '0.7rem', borderRadius: 4 }}>
+          <button 
+            className="btn" 
+            onClick={handleDisconnectStream}
+            disabled={isProcessing}
+            style={{ background: '#cc0000', color: '#fff', padding: '4px 12px', fontSize: '0.7rem', borderRadius: 4, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.5 : 1 }}
+          >
             Disconnect
           </button>
         ) : (
-          <button className="btn" onClick={connect}
-            style={{ background: '#10b981', color: '#1a1a1a', padding: '4px 12px', fontSize: '0.7rem', borderRadius: 4 }}>
+          <button 
+            className="btn" 
+            onClick={handleConnectStream}
+            disabled={isProcessing}
+            style={{ background: '#10b981', color: '#1a1a1a', padding: '4px 12px', fontSize: '0.7rem', borderRadius: 4, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.5 : 1 }}
+          >
             Connect
           </button>
         )}

@@ -1,12 +1,15 @@
-import { useMemo } from 'react';
+import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { useStore, CONFIG } from '../store.js';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
+// 🟢 Optimization: Disable chart animations to eliminate real-time stuttering
+ChartJS.defaults.animation.duration = 0;
+
 export default function VolumetricsPage() {
-  const { hazards } = useStore();
+  const { hazards = [] } = useStore();
 
   const metrics = useMemo(() => {
     let totalArea = 0;
@@ -17,7 +20,7 @@ export default function VolumetricsPage() {
 
     hazards.forEach(h => {
       const cls = h.class_name || h.type || 'pothole_dry';
-      const vol = Number(h.estimated_volume_m3) || 0.05;
+      const vol = Number(h.estimated_volume_m3 || h.volume_m3) || 0.05;
       const area = Number(h.surface_area_m2) || (vol * 8.5);
 
       totalArea += area;
@@ -42,12 +45,12 @@ export default function VolumetricsPage() {
 
   const classKeys = Object.keys(metrics.classStats);
   const barData = {
-    labels: classKeys.map(k => CONFIG.TYPE_LABELS[k] || k),
+    labels: classKeys.length > 0 ? classKeys.map(k => CONFIG.TYPE_LABELS?.[k] || k) : ['No Data'],
     datasets: [
       {
         label: 'Total Volume (m³)',
-        data: classKeys.map(k => Number(metrics.classStats[k].totalVolume.toFixed(3))),
-        backgroundColor: classKeys.map(k => CONFIG.TYPE_COLORS[k] || '#10b981'),
+        data: classKeys.length > 0 ? classKeys.map(k => Number(metrics.classStats[k].totalVolume.toFixed(3))) : [0],
+        backgroundColor: classKeys.length > 0 ? classKeys.map(k => CONFIG.TYPE_COLORS?.[k] || '#10b981') : ['#333'],
         borderRadius: 4,
       }
     ],
@@ -136,23 +139,31 @@ export default function VolumetricsPage() {
               </tr>
             </thead>
             <tbody>
-              {Object.entries(metrics.classStats).map(([cls, stat]) => (
-                <tr key={cls}>
-                  <td>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                      <span style={{ background: CONFIG.TYPE_COLORS[cls] || '#10b981', color: '#fff', padding: '1px 6px', borderRadius: 3, fontSize: '10px', fontWeight: 700 }}>
-                        {CONFIG.TYPE_ICONS[cls] || 'DEFECT'}
-                      </span>
-                      <strong>{CONFIG.TYPE_LABELS[cls] || cls}</strong>
-                    </span>
+              {Object.entries(metrics.classStats).length === 0 ? (
+                <tr>
+                  <td colSpan={6} style={{ textAlign: 'center', padding: 30, color: '#666' }}>
+                    No volumetric data available — start the video pipeline to stream telemetry.
                   </td>
-                  <td style={{ fontFamily: 'var(--font-mono)' }}>{stat.count}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)' }}>{stat.totalArea.toFixed(2)}</td>
-                  <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#ffbb00' }}>{stat.totalVolume.toFixed(3)} m³</td>
-                  <td style={{ fontFamily: 'var(--font-mono)' }}>{(stat.totalVolume / stat.count).toFixed(3)} m³</td>
-                  <td style={{ fontFamily: 'var(--font-mono)' }}>{stat.maxArea.toFixed(2)} m²</td>
                 </tr>
-              ))}
+              ) : (
+                Object.entries(metrics.classStats).map(([cls, stat]) => (
+                  <tr key={cls}>
+                    <td>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ background: CONFIG.TYPE_COLORS?.[cls] || '#10b981', color: '#fff', padding: '1px 6px', borderRadius: 3, fontSize: '10px', fontWeight: 700 }}>
+                          {CONFIG.TYPE_ICONS?.[cls] || 'DEFECT'}
+                        </span>
+                        <strong>{CONFIG.TYPE_LABELS?.[cls] || cls}</strong>
+                      </span>
+                    </td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{stat.count}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{stat.totalArea.toFixed(2)}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#ffbb00' }}>{stat.totalVolume.toFixed(3)} m³</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{(stat.totalVolume / stat.count).toFixed(3)} m³</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{stat.maxArea.toFixed(2)} m²</td>
+                  </tr>
+                ))
+              )}
             </tbody>
           </table>
         </div>

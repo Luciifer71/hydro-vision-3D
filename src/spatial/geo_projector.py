@@ -64,7 +64,7 @@ class GeoProjector:
         drone_lat: float,
         drone_lon: float,
         altitude_m: float,
-        pitch_deg: float = -90.0,  # Default Nadir (pointing straight down)
+        pitch_deg: float,
         roll_deg: float = 0.0,
         yaw_deg: float = 0.0,
     ) -> dict:
@@ -72,50 +72,63 @@ class GeoProjector:
 
         Returns WGS84 Latitude, Longitude, and ground offset distance.
         """
-        if altitude_m <= 0.1:
-            return {"latitude": drone_lat, "longitude": drone_lon, "ground_distance_m": 0.0}
+        # Safety fallback if altitude is invalid or ground level is reached
+        if altitude_m is None or altitude_m <= 0.5:
+            return {
+                "latitude": round(drone_lat, 7),
+                "longitude": round(drone_lon, 7),
+                "ground_distance_m": 0.0,
+                "offsets_enu": {"east_m": 0.0, "north_m": 0.0}
+            }
 
-        # 1. Normalize pixel offset relative to optical center
-        x_norm = (pixel_x - self.cx) / self.fx
-        y_norm = (pixel_y - self.cy) / self.fy
+        # Guard against normalized pixels (e.g. YOLO outputs between 0.0 and 1.0)
+        if 0.0 <= pixel_x <= 1.0 and 0.0 <= pixel_y <= 1.0:
+            pixel_x = pixel_x * self.img_w
+            pixel_y = pixel_y * self.img_h
+
+        # 1. Clamp pixel coordinates safely BEFORE computing ray to prevent explosions
+        safe_x = max(1.0, min(float(self.img_w - 1.0), float(pixel_x)))
+        safe_y = max(1.0, min(float(self.img_h - 1.0), float(pixel_y)))
+
+        # Normalize pixel offset relative to optical center
+        x_norm = (safe_x - self.cx) / self.fx
+        y_norm = (safe_y - self.cy) / self.fy
 
         # Ray vector in Camera Optical Coordinate Frame (X-Right, Y-Down, Z-Forward)
         ray_camera = np.array([x_norm, y_norm, 1.0])
-        ray_camera /= np.linalg.norm(ray_camera)
+        norm_val = np.linalg.norm(ray_camera)
+        if norm_val > 0:
+            ray_camera /= norm_val
 
         # 2. Convert Camera Frame to ENU (East-North-Up) Frame
         R = self._rotation_matrix(pitch_deg, roll_deg, yaw_deg)
 
         # Camera down (+Z) maps to ENU Down (-Z) for Nadir orientation
         optical_to_enu = np.array([[0, 1, 0], [1, 0, 0], [0, 0, -1]])
-
         ray_enu = R @ optical_to_enu @ ray_camera
 
-                # Clamp pixel coordinates within image boundary bounds to prevent ray instability at edges
-        pixel_x = max(10, min(self.img_w - 10, pixel_x))
-        pixel_y = max(10, min(self.img_h - 10, pixel_y))
-
-        # Prevent division by zero if ray is parallel to horizon
-        if ray_enu[2] >= -1e-6:
-            ray_enu[2] = -1e-6
+        # Prevent division by zero or parallel-to-horizon ray instability
+        if ray_enu[2] >= -1e-4:
+            ray_enu[2] = -1e-4
 
         # 3. Ray-Ground Intersection (Ground Plane Z = 0)
-        # Scale ray until Z displacement equals -altitude_m
-        scale = -altitude_m / ray_enu[2]
+        scale = -float(altitude_m) / ray_enu[2]
         east_offset_m = ray_enu[0] * scale
         north_offset_m = ray_enu[1] * scale
 
         ground_distance_m = math.sqrt(east_offset_m**2 + north_offset_m**2)
 
-        # 4. WGS84 Geodetic Coordinate Conversion
+        # 4. WGS84 Geodetic Coordinate Conversion (Guarding longitude division by cos(lat))
+        lat_rad = math.radians(float(drone_lat))
+        cos_lat = math.cos(lat_rad)
+        if abs(cos_lat) < 1e-6:
+            cos_lat = 1e-6  # Prevent division by zero near poles
+
         delta_lat = (north_offset_m / self.EARTH_RADIUS_M) * (180.0 / math.pi)
-        delta_lon = (
-            east_offset_m / (self.EARTH_RADIUS_M * math.cos(math.radians(drone_lat)))
-        ) * (180.0 / math.pi)
+        delta_lon = (east_offset_m / (self.EARTH_RADIUS_M * cos_lat)) * (180.0 / math.pi)
 
-        hazard_lat = round(drone_lat + delta_lat, 7)
-        hazard_lon = round(drone_lon + delta_lon, 7)
-
+        hazard_lat = round(float(drone_lat) + delta_lat, 7)
+        hazard_lon = round(float(drone_lon) + delta_lon, 7)
 
         return {
             "latitude": hazard_lat,

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { supabase } from './lib/supabase.js';
 
 const getBackendUrls = () => {
   if (typeof window === 'undefined') {
@@ -111,23 +112,7 @@ export function parseGeoJsonFeatures(geojson) {
   });
 }
 
-const INITIAL_HAZARDS = [
-  {
-    hazard_id: 'HAZ-0001',
-    track_id: 1,
-    type: 'pothole_dry',
-    class_name: 'pothole_dry',
-    confidence: 0.9542,
-    estimated_volume_m3: 0.0496,
-    detections_count: 27,
-    surface_area_m2: 4.96,
-    severity: 'LOW',
-    priority_score: 95,
-    zone: 'Zone A',
-    status: 'OPEN',
-    location: { latitude: 22.307199089287163, longitude: 73.18119957041166 }
-  }
-];
+const INITIAL_HAZARDS = [];
 
 export const useStore = create((set, get) => ({
   connectionStatus: 'DISCONNECTED',
@@ -151,7 +136,7 @@ export const useStore = create((set, get) => ({
   },
 
   viewMode: 'fly',
-  feedMode: 'live', // 'live' | 'video'
+  feedMode: 'live',
   currentPage: 'dashboard',
   streamRunning: false,
   videoPath: '/sample-drone.mp4',
@@ -182,12 +167,10 @@ export const useStore = create((set, get) => ({
     set({
       feedMode: 'live',
       videoPath: '/sample-drone.mp4',
-
       streamRunning: true,
     });
-    // Trigger backend live stream pipeline reset/start
     try {
-      await fetch(`${get().settings.apiUrl}/api/stream/start`);
+      await fetch(`${get().settings.apiUrl}/api/stream/start`, { method: 'POST' });
     } catch (e) {
       console.warn('Backend live stream notification:', e);
     }
@@ -199,22 +182,24 @@ export const useStore = create((set, get) => ({
 
   uploadVideo: async (file) => {
     if (!file) return;
+    
+    await get().resetStream();
+
     const blobUrl = URL.createObjectURL(file);
     const fileName = file.name;
     get().addLog(`Loaded pre-recorded video: ${fileName}`);
 
-    // Set local blobUrl immediately for instant HTML5 playback in UI
     set({
       videoPath: blobUrl,
       feedMode: 'video',
       streamRunning: true,
       currentPage: 'dashboard',
       viewMode: 'fly',
+      hazards: [],          
+      timelineHistory: [],  
+      riskHistory: [],      
     });
 
-    let serverFilename = null;
-
-    // Post file to backend upload endpoint for AI video analysis
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -223,26 +208,49 @@ export const useStore = create((set, get) => ({
         body: formData,
       });
       if (res.ok) {
-        const data = await res.json();
-        if (data.filename) {
-          serverFilename = data.filename;
-          get().addLog(`Uploaded ${fileName} to server — HTTP stream ready: ${data.filename}`);
-        }
+        get().addLog(`Uploaded ${fileName} to server — AI Pipeline Active`);
       }
     } catch (err) {
-      console.warn('Backend API upload warning, using local blob stream:', err);
-    }
-
-    if (serverFilename) {
-      // Trigger backend stream loop with the uploaded file
-      try {
-        await fetch(`${get().settings.apiUrl}/api/stream/start?video_path=${encodeURIComponent(serverFilename)}`);
-      } catch (e) {
-        console.warn('Could not trigger backend stream loop for video:', e);
-      }
+      console.warn('Backend upload warning:', err);
     }
 
     get().addLog(`Analyzing recorded video feed: ${fileName}`);
+  },
+
+  syncHazardsToSupabase: async () => {
+    const hazards = get().hazards;
+    if (!hazards || hazards.length === 0) {
+      console.warn('[SUPABASE] No hazards to sync.');
+      get().addLog('Supabase sync skipped: No active hazards.');
+      return { success: false, count: 0 };
+    }
+
+    const payload = hazards.map(h => ({
+      hazard_id: h.hazard_id || h.track_id || 'HAZ-UNKNOWN',
+      class_name: h.class_name || h.type || 'pothole_dry',
+      confidence: Number(h.confidence || 0.95),
+      surface_area_m2: Number(h.surface_area_m2 || 0),
+      estimated_volume_m3: Number(h.estimated_volume_m3 || h.volume_m3 || 0),
+      latitude: Number(h.location?.latitude ?? h.latitude ?? 22.3072),
+      longitude: Number(h.location?.longitude ?? h.longitude ?? 73.1812),
+      severity: (h.severity || 'LOW').toUpperCase(),
+      status: h.status || 'OPEN',
+      zone: h.zone || 'Zone-A'
+    }));
+
+    const { data, error } = await supabase
+      .from('mission_detections')
+      .upsert(payload, { onConflict: 'hazard_id' });
+
+    if (error) {
+      console.error('[SUPABASE] Sync error:', error.message);
+      get().addLog(`Supabase sync failed: ${error.message}`);
+      return { success: false, error: error.message };
+    }
+
+    console.log(`[SUPABASE] Successfully persisted ${payload.length} records!`);
+    get().addLog(`Successfully synced ${payload.length} hazards to Supabase.`);
+    return { success: true, count: payload.length };
   },
 
   addLog: (msg) => {
@@ -261,7 +269,6 @@ export const useStore = create((set, get) => ({
     const isCritical = riskLevel === 'CRITICAL';
 
     set((state) => {
-      // Simulate realistic OSD telemetry
       const t = state.telemetry;
       const lat = hazards.length > 0 && hazards[0].location?.latitude ? hazards[0].location.latitude : t.latitude;
       const lon = hazards.length > 0 && hazards[0].location?.longitude ? hazards[0].location.longitude : t.longitude;
@@ -297,7 +304,6 @@ export const useStore = create((set, get) => ({
       const t = state.telemetry;
       const fId = frameInfo.frameId ?? 0;
       const time = frameInfo.currentTime ?? 0;
-      // Calculate realistic telemetry with subtle variation based on video playback
       const altitude = 24.5 + Math.sin(time / 4) * 1.8 + (Math.random() - 0.5) * 0.2;
       const speed = Math.max(0, 5.4 + Math.cos(time / 3) * 2.1 + (Math.random() - 0.5) * 0.3);
       const heading = (245 + (time * 1.5) + Math.sin(time) * 3) % 360;
@@ -394,14 +400,13 @@ export const useStore = create((set, get) => ({
 
   connect: () => {
     const state = get();
-    get().fetchGeoJsonHazards();
     if (['CONNECTING', 'LIVE'].includes(state.connectionStatus)) return;
     set({ connectionStatus: 'CONNECTING' });
     get()._connectWS();
   },
 
   _connectWS: () => {
-    const { settings, addLog, ingestData } = get();
+    const { settings, addLog } = get();
     let ws;
     try { ws = new WebSocket(settings.wsUrl); }
     catch (e) {
@@ -414,7 +419,7 @@ export const useStore = create((set, get) => ({
     ws.onopen = () => {
       set({ connectionStatus: 'LIVE', wsRef: ws, streamRunning: true });
       addLog('WebSocket connected to backend');
-      fetch(`${settings.apiUrl}/api/stream/start`)
+      fetch(`${settings.apiUrl}/api/stream/start`, { method: 'POST' })
         .then(r => r.json()).then(d => addLog(`Stream: ${d.message || 'started'}`))
         .catch(() => addLog('Stream start failed - check backend'));
     };
@@ -423,59 +428,88 @@ export const useStore = create((set, get) => ({
       try {
         const raw = JSON.parse(event.data);
         if (raw.error) { addLog(`Backend error: ${raw.error}`); return; }
-        const s = raw.summary || {};
-        const totalArea = s.total_affected_area ?? s.total_area_m2 ?? 0;
-        const riskLevel = s.overall_risk ?? s.risk_level ?? 'LOW';
-        ingestData({
-          stream_status: raw.stream_status || 'LIVE',
-          frame_id: raw.frame_id ?? 0,
-          timestamp: raw.timestamp ?? Date.now() / 1000,
-          summary: {
-            active_hazards: s.active_hazards ?? raw.hazards?.length ?? 0,
-            total_affected_area: totalArea,
-            total_area_m2: totalArea,
-            overall_risk: riskLevel,
-            risk_level: riskLevel,
-            risk_score: ({ LOW: 1, MODERATE: 2, HIGH: 3, CRITICAL: 4 }[riskLevel] ?? 1),
-            action: s.action ?? '',
-            alert_count: s.alert_count ?? s.total_cumulative_hazards ?? 0,
-          },
-          hazards: (raw.hazards || []).map(h => ({
-            hazard_id: h.hazard_id ?? null,
-            track_id: h.track_id ?? h.id ?? 0,
-            type: h.type ?? 'pothole',
-            confidence: h.confidence ?? 1.0,
-            surface_area_m2: Number(h.surface_area_m2 ?? h.area ?? 0),
-            severity: h.severity ?? null,
-            priority_score: h.priority_score ?? null,
-            zone: h.zone ?? null,
-            status: h.status ?? 'OPEN',
-            visual_evidence_url: h.visual_evidence_url ?? null,
-            bbox: h.bbox || [],
-            location: { ...(h.location || {}) },
-          })),
+
+        const rawHazards = raw.telemetry || raw.hazards || [];
+        
+        get().updateLocalVideoFrame({
+          frameId: raw.frame_id ?? 0,
+          currentTime: (raw.frame_id ?? 0) / 30,
+        });
+
+        const incomingParsed = rawHazards.map((h, idx) => ({
+          hazard_id: h.id ?? `HAZ-${String(idx + 1).padStart(4, '0')}`,
+          track_id: h.id ?? idx + 1,
+          type: h.hazard ?? 'pothole_dry',
+          class_name: h.hazard ?? 'pothole_dry',
+          confidence: h.confidence ?? 1.0,
+          surface_area_m2: Number(h.volume_m3 ? h.volume_m3 * 50 : 0),
+          estimated_volume_m3: Number(h.volume_m3 ?? 0),
+          severity: severityFromArea(h.volume_m3 ?? 0),
+          status: 'OPEN',
+          latitude: h.latitude,
+          longitude: h.longitude,
+          location: { latitude: h.latitude, longitude: h.longitude },
+          last_detected: h.timestamp || new Date().toISOString(),
+        }));
+
+        set((state) => {
+          const now = new Date().toLocaleTimeString('en-US', { hour12: false });
+          const hazardMap = new Map(state.hazards.map((h) => [h.hazard_id, h]));
+          incomingParsed.forEach((h) => hazardMap.set(h.hazard_id, h));
+          const accumulatedHazards = Array.from(hazardMap.values());
+          const totalArea = accumulatedHazards.reduce((sum, h) => sum + (Number(h.estimated_volume_m3) || 0), 0);
+          const riskLevel = totalArea > 2.0 ? 'CRITICAL' : totalArea > 0.5 ? 'HIGH' : 'LOW';
+          const rScore = riskLevel === 'CRITICAL' ? 100 : 25;
+
+          return {
+            stream_status: raw.status === 'online' ? 'LIVE' : 'STREAMING',
+            frame_id: raw.frame_id ?? 0,
+            hazards: accumulatedHazards,
+            
+            timelineHistory: [
+              ...state.timelineHistory, 
+              { time: now, count: accumulatedHazards.length }
+            ].slice(-CONFIG.CHART_HISTORY),
+            
+            riskHistory: [
+              ...state.riskHistory, 
+              { time: now, score: rScore }
+            ].slice(-CONFIG.CHART_HISTORY),
+
+            currentState: {
+              ...(state.currentState || {}),
+              summary: {
+                active_hazards: accumulatedHazards.length,
+                total_affected_area: totalArea,
+                total_area_m2: totalArea,
+                overall_risk: riskLevel,
+                risk_level: riskLevel,
+                risk_score: rScore,
+                action: riskLevel === 'CRITICAL' ? 'Issue emergency response and traffic reroute.' : 'Dispatch local maintenance crew.',
+                alert_count: accumulatedHazards.length,
+              },
+              hazards: accumulatedHazards,
+            }
+          };
         });
       } catch (e) { console.error('WS parse:', e); }
     };
 
-    ws.onerror = () => set({ connectionStatus: 'ERROR' });
-
     ws.onclose = () => {
-      set({ connectionStatus: 'RECONNECTING', streamRunning: false });
-      addLog('WebSocket disconnected. Reconnecting in 3s...');
-      const t = setTimeout(() => get()._connectWS(), 3000);
-      set({ reconnectTimer: t });
+      set({ connectionStatus: 'DISCONNECTED', wsRef: null, streamRunning: false });
     };
-
-    set({ wsRef: ws });
   },
 
   disconnect: () => {
-    const { wsRef, reconnectTimer } = get();
+    const { wsRef, reconnectTimer, settings } = get();
     if (reconnectTimer) clearTimeout(reconnectTimer);
     if (wsRef) { wsRef.onclose = null; wsRef.close(); }
     set({ connectionStatus: 'DISCONNECTED', wsRef: null, streamRunning: false });
-    get().addLog('Disconnected from backend');
+    
+    fetch(`${settings.apiUrl}/api/stream/stop`, { method: 'POST' })
+      .catch((e) => console.warn('Could not reach backend to stop stream:', e));
+
+    get().addLog('Disconnected from backend — System in Standby');
   },
 
   startStream: async () => {
@@ -483,7 +517,7 @@ export const useStore = create((set, get) => ({
     try {
       const url = new URL(`${settings.apiUrl}/api/stream/start`);
       if (videoPath) url.searchParams.append('video_path', videoPath);
-      const res = await fetch(url.toString());
+      const res = await fetch(url.toString(), { method: 'POST' });
       const data = await res.json();
       addLog(`Stream start: ${data.message || 'OK'}`);
       set({ streamRunning: true });
@@ -493,7 +527,7 @@ export const useStore = create((set, get) => ({
   stopStream: async () => {
     const { settings, addLog } = get();
     try {
-      const res = await fetch(`${settings.apiUrl}/api/stream/stop`);
+      const res = await fetch(`${settings.apiUrl}/api/stream/stop`, { method: 'POST' });
       const data = await res.json();
       addLog(`Stream stopped: ${data.message || 'OK'}`);
       set({ streamRunning: false });

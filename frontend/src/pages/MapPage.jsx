@@ -1,34 +1,51 @@
+import React, { useState, useEffect } from 'react';
 import HazardMap from '../components/HazardMap.jsx';
 import { useStore } from '../store.js';
 
 export default function MapPage() {
-  const { hazards } = useStore();
-  const totalArea = hazards.reduce((s, h) => s + (Number(h.surface_area_m2) || 0), 0);
+  const { hazards = [] } = useStore();
+  const [currentTime, setCurrentTime] = useState('');
+
+  // Live ticking clock for tracking telemetry updates
+  useEffect(() => {
+    setCurrentTime(new Date().toLocaleTimeString('en-US', { hour12: false }));
+    const timer = setInterval(() => {
+      setCurrentTime(new Date().toLocaleTimeString('en-US', { hour12: false }));
+    }, 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  const totalArea = hazards.reduce((s, h) => s + (Number(h.surface_area_m2 || (h.estimated_volume_m3 * 8.5)) || 0), 0);
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
+      {/* KPI Grid */}
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
         {[
           { label: 'Total Markers', value: hazards.length },
           { label: 'Coverage Area', value: `${totalArea.toFixed(2)} m²` },
-          { label: 'Last Updated', value: new Date().toLocaleTimeString('en-US', { hour12: false }) },
+          { label: 'Last Updated', value: currentTime || '—' },
         ].map(({ label, value }) => (
           <div className="kpi-card" key={label}>
             <span className="kpi-label">{label}</span>
-            <div className="kpi-value" style={{ fontSize: '1.2rem' }}>{value}</div>
+            <div className="kpi-value" style={{ fontSize: '1.2rem', color: '#ffbb00' }}>{value}</div>
           </div>
         ))}
       </div>
 
-      <div className="card">
-        <div className="card-header">
+      {/* GIS Hazard Map Container */}
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 350 }}>
+        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span className="card-title">GIS Hazard Map — Vadodara</span>
-          <span className="card-badge badge-live">● Live</span>
+          <span className="card-badge badge-live" style={{ color: '#10b981', fontSize: '0.7rem' }}>● Live Streaming</span>
         </div>
-        <HazardMap fullpage />
+        <div style={{ flex: 1, position: 'relative', minHeight: 300, width: '100%' }}>
+          <HazardMap fullpage />
+        </div>
       </div>
 
-      <div className="card">
+      {/* Map Legend */}
+      <div className="card" style={{ flexShrink: 0 }}>
         <div className="card-header"><span className="card-title">Map Legend</span></div>
         <div className="card-body" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
           <div>
