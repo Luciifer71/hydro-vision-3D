@@ -26,7 +26,7 @@ export default function FlyView() {
   const wsStatus = liveHazards.wsStatus || 'offline';
 
   // 3. Derived UI metrics
-  const displayHazards = activeFrameHazards.length > 0 ? activeFrameHazards : hazards;
+  const displayHazards = activeFrameHazards.length > 0 ? activeFrameHazards : (hazards.length > 0 ? hazards : (store.hazards || []));
   const activeHazards = totalMarkers || displayHazards.length;
   const totalArea = Number(totalVolume) || 0;
   

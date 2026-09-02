@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useStore, CONFIG } from '../store.js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
+import HazardModal from './HazardModal';
 
 // Fix default Leaflet icon path issues
 delete L.Icon.Default.prototype._getIconUrl;
@@ -43,6 +44,7 @@ export default function HazardMap({ fullpage = false }) {
   const droneMarkerRef = useRef(null);
 
   const [activeLayer, setActiveLayer] = useState('google-hybrid');
+  const [selectedHazard, setSelectedHazard] = useState(null);
   const { hazards = [], telemetry = {}, currentPage } = useStore();
 
   // Helper to extract coordinates safely from various backend payload structures
@@ -144,31 +146,13 @@ export default function HazardMap({ fullpage = false }) {
       const detectionsStr = `${h.detections_count || 1} frame passes`;
       const radius = Math.max(7, Math.min(18, (Number(h.estimated_volume_m3 || h.volume_m3) || 0.1) * 35));
 
-      const popup = `
-        <div style="min-width:185px;font-family:'Segoe UI',sans-serif;font-size:12px;color:#0f172a;padding:2px">
-          <div style="font-weight:800;color:${color};font-size:13px;margin-bottom:6px;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #e2e8f0;padding-bottom:4px">
-            <span style="display:flex;align-items:center;gap:6px">
-              <span style="background:${color};color:#ffffff;padding:1px 5px;border-radius:3px;font-size:10px;font-weight:700">${CONFIG.TYPE_ICONS?.[className] || 'DEFECT'}</span>
-              <span>${(CONFIG.TYPE_LABELS?.[className] || className).toUpperCase()}</span>
-            </span>
-            <span style="font-size:10px;color:#64748b;font-family:monospace">${hazardId}</span>
-          </div>
-          <div style="line-height:1.7;font-size:11px">
-            <div><span style="color:#64748b;font-weight:600">Class Name:</span> <code style="background:#f1f5f9;padding:1px 5px;border-radius:3px;color:#0f172a;font-weight:700">${className}</code></div>
-            <div><span style="color:#64748b;font-weight:600">Confidence:</span> <strong>${confidenceStr}</strong></div>
-            <div><span style="color:#64748b;font-weight:600">Estimated Volume:</span> <strong>${volumeStr}</strong></div>
-            <div><span style="color:#64748b;font-weight:600">Detection Count:</span> <strong>${detectionsStr}</strong></div>
-            <div style="font-family:monospace;color:#64748b;margin-top:4px;font-size:10px;border-top:1px dashed #cbd5e1;padding-top:3px">
-              GPS: ${coords.lat.toFixed(6)}, ${coords.lon.toFixed(6)}
-            </div>
-          </div>
-        </div>
-      `;
+
 
       if (markers.has(hazardId)) {
         const m = markers.get(hazardId);
         m.setLatLng([coords.lat, coords.lon]);
-        m.setPopupContent(popup);
+        m.off('click');
+        m.on('click', () => setSelectedHazard(h));
         m.setStyle({ color: '#ffffff', fillColor: color, radius: radius });
       } else {
         const m = L.circleMarker([coords.lat, coords.lon], {
@@ -178,7 +162,8 @@ export default function HazardMap({ fullpage = false }) {
           color: '#ffffff',
           weight: 2.5,
           opacity: 1,
-        }).addTo(map).bindPopup(popup);
+        }).addTo(map);
+        m.on('click', () => setSelectedHazard(h));
         markers.set(hazardId, m);
       }
     });
@@ -397,6 +382,11 @@ export default function HazardMap({ fullpage = false }) {
 
       {/* Leaflet Map DOM Element */}
       <div ref={mapRef} style={{ width: '100%', height: '100%' }} />
+
+      {/* Hazard Modal */}
+      {selectedHazard && (
+        <HazardModal hazard={selectedHazard} onClose={() => setSelectedHazard(null)} />
+      )}
     </div>
   );
 }

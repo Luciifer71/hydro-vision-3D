@@ -62,6 +62,16 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
     };
   }, [tick]);
 
+  // Load sample hazards if playing the default sample video
+  useEffect(() => {
+    if (src === '/sample-drone.mp4') {
+      const storeState = useStore.getState();
+      if (storeState.hazards.length === 0 && storeState.fetchGeoJsonHazards) {
+        storeState.fetchGeoJsonHazards();
+      }
+    }
+  }, [src]);
+
   // Reset error state whenever src changes so new video uploads mount the video element
   useEffect(() => {
     setHasError(false);
