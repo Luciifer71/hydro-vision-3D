@@ -37,6 +37,9 @@ runs/
 
 # Backups / archives
 *.zip
+.env
+models/*.pt
+runs/
 
 # Generated frontend / runtime artifacts
 static/snapshots/
