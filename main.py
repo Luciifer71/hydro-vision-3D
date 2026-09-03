@@ -54,8 +54,9 @@ def resolve_model_weights() -> str:
     """Locates custom trained best.pt weights across standard output paths."""
     candidates = [
         "best.pt",
-        "runs/detect/hydro_vision_7class/weights/best.pt",
-        "runs/hydro_vision_m4pro/weights/best.pt",
+        "runs/yolov8s_baseline/weights/best.pt",
+        # "runs/detect/hydro_vision_7class/weights/best.pt",
+        # "runs/hydro_vision_m4pro/weights/best.pt",
         "weights/best.pt",
     ]
     for path in candidates:
