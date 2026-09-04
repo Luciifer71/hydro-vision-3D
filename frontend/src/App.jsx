@@ -8,10 +8,11 @@ import MapPage from './pages/MapPage.jsx';
 import DetectionsPage from './pages/DetectionsPage.jsx';
 import AlertsPage from './pages/AlertsPage.jsx';
 import RiskPage from './pages/RiskPage.jsx';
-import VolumetricsPage from './pages/VolumetricsPage.jsx';
+import AreaAnalyticsPage from './pages/AreaAnalyticsPage.jsx';
 import DepthPage from './pages/DepthPage.jsx';
 import StreamPage from './pages/StreamPage.jsx';
 import BottomBar from './components/BottomBar.jsx';
+import PipelineStatusStrip from './components/PipelineStatusStrip.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import './index.css';
 
@@ -28,7 +29,7 @@ export default function App() {
     detections: <DetectionsPage />,
     alerts: <AlertsPage />,
     risk: <RiskPage />,
-    volumetric: <VolumetricsPage />,
+    volumetric: <AreaAnalyticsPage />,
     depth: <DepthPage />,
     stream: <StreamPage />,
   };
@@ -59,6 +60,9 @@ export default function App() {
       </div>
       <ErrorBoundary name="Bottom Bar">
         <BottomBar />
+      </ErrorBoundary>
+      <ErrorBoundary name="Pipeline Status">
+        <PipelineStatusStrip />
       </ErrorBoundary>
     </div>
   );

@@ -1,9 +1,12 @@
 import React, { useState } from 'react';
 import { useStore, CONFIG } from '../store.js';
+import EmptySessionState from '../components/EmptySessionState.jsx';
 
 export default function AlertsPage() {
-  const { hazards = [], updateHazardStatus } = useStore();
+  const { hazards = [], updateHazardStatus, currentState } = useStore();
   const [filter, setFilter] = useState('ALL');
+
+  if (!currentState) return <EmptySessionState message="No Alerts Available" />;
 
   // Filter for alerts (usually you only want to see actionable items, not 'RESOLVED' ones)
   const activeAlerts = hazards.filter(h => h.status !== 'RESOLVED');
@@ -68,7 +71,7 @@ export default function AlertsPage() {
           <table className="data-table" style={{ width: '100%' }}>
             <thead style={{ position: 'sticky', top: 0, background: '#1e1e1e', zIndex: 10 }}>
               <tr>
-                <th>Track ID</th><th>Type</th><th>Volume (m³)</th><th>Severity</th><th>Action</th>
+                <th>Track ID</th><th>Type</th><th>Area (m²)</th><th>Severity</th><th>Action</th>
               </tr>
             </thead>
             <tbody>
@@ -76,7 +79,7 @@ export default function AlertsPage() {
                 <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: '#666' }}>No active alerts for this severity level.</td></tr>
               ) : (
                 displayAlerts.map((h, i) => {
-                  const vol = Number(h.estimated_volume_m3 || h.surface_area_m2) || 0;
+                  const area = Number(h.surface_area_m2) || 0;
                   const sev = (h.severity || 'LOW').toLowerCase();
                   const clsKey = h.class_name || h.type;
                   const typeIcon = CONFIG.TYPE_ICONS[clsKey] || CONFIG.TYPE_ICONS[h.type] || '⚠️';
@@ -87,7 +90,7 @@ export default function AlertsPage() {
                     <tr key={uid}>
                       <td style={{ fontFamily: 'var(--font-mono)', color: '#ffbb00' }}>{uid}</td>
                       <td><span className="type-badge" style={{ background: '#222' }}>{typeIcon} {typeLabel}</span></td>
-                      <td style={{ fontWeight: 600 }}>{vol.toFixed(2)}</td>
+                      <td style={{ fontWeight: 600 }}>{area.toFixed(1)}</td>
                       <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
                       <td>
                         <button 

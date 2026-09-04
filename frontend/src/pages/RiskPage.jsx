@@ -2,23 +2,19 @@ import React from 'react';
 import { Line, Pie } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler } from 'chart.js';
 import { useStore } from '../store.js';
+import { computeSessionRisk } from '../lib/derive.js';
+import EmptySessionState from '../components/EmptySessionState.jsx';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler);
 
 // 🟢 Optimization: Disable chart animations for real-time streaming performance
 ChartJS.defaults.animation.duration = 0;
 
-function severityFromArea(a) {
-  const area = Number(a) || 0;
-  if (area >= 75) return 'CRITICAL'; 
-  if (area >= 25) return 'HIGH'; 
-  if (area >= 5) return 'MODERATE'; 
-  return 'LOW';
-}
-
 export default function RiskPage() {
   const { hazards = [], riskHistory = [], currentState = {} } = useStore();
-  const riskLevel = currentState?.summary?.overall_risk || currentState?.summary?.risk_level || 'LOW';
+  const { riskLevel } = computeSessionRisk(hazards, currentState?.summary || {});
+
+  if (!currentState) return <EmptySessionState message="No Risk Data Available" />;
 
   // Fallback history data if empty so the chart renders cleanly
   const safeHistory = riskHistory.length > 0 ? riskHistory : [{ time: '00:00', score: 25 }];
@@ -39,8 +35,8 @@ export default function RiskPage() {
 
   const counts = { LOW: 0, MODERATE: 0, HIGH: 0, CRITICAL: 0 };
   hazards.forEach(h => { 
-    const s = (h.severity || severityFromArea(h.estimated_volume_m3 || h.surface_area_m2)).toUpperCase(); 
-    if (counts[s] !== undefined) counts[s]++; 
+    const s = h.severity && h.severity !== '—' ? h.severity.toUpperCase() : null; 
+    if (s && counts[s] !== undefined) counts[s]++; 
   });
 
   const pieData = {

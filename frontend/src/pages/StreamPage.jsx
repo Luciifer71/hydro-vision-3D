@@ -18,7 +18,7 @@ export default function StreamPage() {
     videoPath, setVideoPath, logs, feedMode, setFeedMode, switchToLiveFeed
   } = useStore();
 
-  const fps = currentState ? Math.round(Math.random() * 5 + 10) : 0;
+  const fps = currentState?.summary?.fps || 0;
   const isLive = feedMode === 'live';
 
   return (
@@ -79,6 +79,7 @@ export default function StreamPage() {
               { label: 'Connection', value: connectionStatus },
               { label: 'Stream Status', value: streamRunning ? 'STREAMING' : 'IDLE' },
               { label: 'Current Frame', value: `#${currentState?.frame_id ?? 0}` },
+              { label: 'Processing FPS', value: `${fps.toFixed(1)} FPS` },
             ].map(({ label, value }) => (
               <div className="status-item" key={label}>
                 <div className="status-item-label">{label}</div>
@@ -106,6 +107,24 @@ export default function StreamPage() {
             <input className="form-input" type="text" value={videoPath || ''} onChange={e => setVideoPath(e.target.value)} placeholder="data/raw_videos/sample_drone.mp4" />
           </div>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Path is relative to backend directory or server URL. Setting a custom video file automatically switches to Recorded Video Analysis mode.</p>
+          
+          <hr style={{ borderColor: '#333', margin: '16px 0' }} />
+          
+          <div className="form-group">
+            <label className="form-label" style={{ color: '#ffbb00' }}>Load Past Session (Session ID)</label>
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <input className="form-input" id="sessionIdInput" type="text" placeholder="e.g. sess_a1b2c3d4" style={{ flex: 1 }} />
+              <button 
+                className="btn btn-outline" 
+                onClick={() => {
+                  const sid = document.getElementById('sessionIdInput').value;
+                  if(sid) alert(`In a full environment, this will fetch /api/sessions/${sid}/bundle`);
+                }}
+              >
+                Load Session
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -40,14 +40,14 @@ export default function OSDOverlay({ telemetry, riskLevel, activeHazards, totalA
 
       {/* REC Badge */}
       {streamRunning && (
-        <div className="rec-badge" style={{ top: 12, left: isLiveFeed ? 130 : 185, transform: 'none' }}>
+        <div className="rec-badge" style={{ top: 12, left: connectionStatus === 'LIVE' ? 130 : 185, transform: 'none' }}>
           <div className="rec-dot" />
-          {isLiveFeed ? 'LIVE REC' : 'VIDEO ANALYZER'}
+          {connectionStatus === 'LIVE' ? 'LIVE REC' : 'VIDEO ANALYZER'}
         </div>
       )}
 
       {/* Artificial Horizon — Only in Live Drone Feed when connected */}
-      {isLiveFeed && !isOffline && (
+      {connectionStatus === 'LIVE' && !isOffline && (
         <div className="horizon-box">
           <div className="horizon-line" style={{ transform: `rotate(${((t.roll || 0)) * 0.3}deg)` }} />
         </div>
@@ -60,7 +60,7 @@ export default function OSDOverlay({ telemetry, riskLevel, activeHazards, totalA
       <div className="osd">
         {/* Top Left — GPS & Flight Telemetry (Only in Live Drone Feed) */}
         <div className="osd-tl">
-          {isLiveFeed ? (
+          {connectionStatus === 'LIVE' ? (
             <>
               <OSDTag label="LAT" value={(t.latitude || 22.3072).toFixed(5)} valClass="good" />
               <OSDTag label="LON" value={(t.longitude || 73.1812).toFixed(5)} valClass="good" />
@@ -77,7 +77,7 @@ export default function OSDOverlay({ telemetry, riskLevel, activeHazards, totalA
 
         {/* Top Right — Battery & Signal (Only in Live Drone Feed) */}
         <div className="osd-tr">
-          {isLiveFeed && (
+          {connectionStatus === 'LIVE' && (
             <>
               <OSDTag label="BATT" value={`${battPct}%`} valClass={battClass} />
               <OSDTag label="RSSI" value={`${rssiVal}`} unit="dBm" valClass={rssiClass} />
@@ -103,7 +103,7 @@ export default function OSDOverlay({ telemetry, riskLevel, activeHazards, totalA
 
         {/* Bottom Left — Speed & Time */}
         <div className="osd-bl">
-          {isLiveFeed && (
+          {connectionStatus === 'LIVE' && (
             <>
               <OSDTag label="SPD" value={`${(t.speed || 0).toFixed(1)}`} unit="m/s" />
               <OSDTag label="V.SPD" value={`${(t.verticalSpeed || 0) >= 0 ? '+' : ''}${(t.verticalSpeed || 0).toFixed(1)}`} unit="m/s" valClass={(t.verticalSpeed || 0) < -1 ? 'danger' : ''} />
@@ -121,7 +121,7 @@ export default function OSDOverlay({ telemetry, riskLevel, activeHazards, totalA
               <span className="val" style={{ color: '#ffffff', fontWeight: 900, fontSize: '0.75rem', letterSpacing: '1px' }}>! CRITICAL HAZARD</span>
             </div>
           )}
-          {isLiveFeed && battPct < 20 && isCritical && (
+          {connectionStatus === 'LIVE' && battPct < 20 && isCritical && (
             <div className="osd-tag" style={{ background: '#cc0000', border: '1px solid #ff4444', padding: '5px 12px' }}>
               <span className="val" style={{ color: '#ffffff', fontWeight: 900, fontSize: '0.75rem', letterSpacing: '1px' }}>RTL ADVISED</span>
             </div>

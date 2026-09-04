@@ -46,7 +46,7 @@ export default function HazardMap({ fullpage = false }) {
 
   const [activeLayer, setActiveLayer] = useState('google-hybrid');
   const [selectedHazard, setSelectedHazard] = useState(null);
-  const { hazards = [], telemetry = {}, trajectory = [], currentPage } = useStore();
+  const { hazards = [], telemetry = {}, trajectory = [], currentPage, connectionStatus } = useStore();
 
   // Helper to extract coordinates safely from various backend payload structures
   const extractCoords = (h) => {
@@ -137,18 +137,14 @@ export default function HazardMap({ fullpage = false }) {
       const coords = extractCoords(h);
       if (!coords) return;
 
-      const hazardId = h.track_id || h.hazard_id || `HAZ-${index}`;
+      const hazardId = (h.track_id != null && h.track_id !== '') ? String(h.track_id) : (h.hazard_id || `HAZ-${index}`);
       currentIds.add(hazardId);
 
-      const className = h.class_name || h.type || 'pothole_dry';
+      const className = h.class_name || h.type || 'unknown';
       const color = CONFIG.TYPE_COLORS?.[className] || CONFIG.TYPE_COLORS?.[h.type] || '#10b981';
-      const confidenceStr = `${((h.confidence ?? 0.95) * 100).toFixed(1)}%`;
-      const volumeStr = `${Number(h.estimated_volume_m3 || h.volume_m3 || 0.05).toFixed(2)} m³`;
-      const detectionsStr = `${h.detections_count || 1} frame passes`;
-      const radius = Math.max(7, Math.min(18, (Number(h.estimated_volume_m3 || h.volume_m3) || 0.1) * 35));
-
-
-
+      const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : null;
+      
+      const radius = area != null ? Math.max(7, Math.min(18, area * 5)) : 7;
       if (markers.has(hazardId)) {
         const m = markers.get(hazardId);
         m.setLatLng([coords.lat, coords.lon]);
@@ -317,6 +313,31 @@ export default function HazardMap({ fullpage = false }) {
           </button>
         ))}
       </div>
+
+      {/* RECORDED VIDEO Badge */}
+      {connectionStatus !== 'LIVE' && (
+        <div style={{
+          position: 'absolute',
+          top: 10,
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 1000,
+          background: 'rgba(255, 187, 0, 0.2)',
+          border: '1px solid var(--amber)',
+          color: 'var(--amber)',
+          padding: '4px 10px',
+          borderRadius: 4,
+          fontSize: '0.75rem',
+          fontWeight: 800,
+          boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          gap: 6
+        }}>
+          <span>MODE</span>
+          <span style={{ color: '#ffffff', fontWeight: 900 }}>RECORDED VIDEO</span>
+        </div>
+      )}
 
       {/* Map Navigation & Recenter Controls Overlay */}
       <div

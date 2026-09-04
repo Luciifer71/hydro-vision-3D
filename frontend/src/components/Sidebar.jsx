@@ -8,7 +8,7 @@ const NAV = [
   { id: 'alerts', label: 'Alerts', badge: 'alert' },
   { section: 'Analysis' },
   { id: 'risk', label: 'Risk Engine' },
-  { id: 'volumetric', label: 'Volumetrics' },
+  { id: 'volumetric', label: 'Area Analytics' },
   { id: 'depth', label: 'Depth Analysis' },
   { section: 'Navigation' },
   { id: 'map', label: 'GPS / Map' },

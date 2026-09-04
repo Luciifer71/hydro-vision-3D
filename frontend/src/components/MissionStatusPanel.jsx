@@ -2,10 +2,23 @@
  * MissionStatusPanel — Displays real-time mission parameters and status.
  */
 export default function MissionStatusPanel({ streamRunning, hazards, totalArea, currentState }) {
-  const mode = streamRunning ? 'MAPPING' : 'STANDBY';
-  const modeColor = streamRunning ? '#10b981' : '#666';
+  let mode = 'STANDBY';
+  let modeColor = '#666';
+
+  if (streamRunning) {
+    mode = 'LIVE PROCESSING';
+    modeColor = '#10b981';
+  } else if (currentState?.session_id) {
+    mode = 'MISSION COMPLETE';
+    modeColor = '#3b82f6';
+  }
+
   const totalHazards = currentState?.summary?.total_cumulative_hazards || hazards.length;
   const actionText = currentState?.summary?.action || 'Monitor routine conditions.';
+  const fps = currentState?.summary?.fps || 0;
+  const currentFrame = currentState?.frame_id || 0;
+  const totalFrames = currentState?.summary?.total_frames || 0;
+  const progress = totalFrames > 0 ? Math.min(100, Math.round((currentFrame / totalFrames) * 100)) : 0;
 
   const items = [
     { label: 'Mode', value: mode, color: modeColor },
@@ -20,6 +33,19 @@ export default function MissionStatusPanel({ streamRunning, hazards, totalArea, 
         <span className="card-title">Mission Status</span>
       </div>
       <div className="card-body" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {/* Progress Bar Row */}
+        {streamRunning && totalFrames > 0 && (
+          <div style={{ marginBottom: '8px' }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', color: '#888', marginBottom: '4px' }}>
+              <span>Frame {currentFrame} / {totalFrames}</span>
+              <span style={{ fontFamily: 'var(--font-mono)' }}>{fps.toFixed(1)} FPS</span>
+            </div>
+            <div style={{ width: '100%', height: '6px', background: '#333', borderRadius: '3px', overflow: 'hidden' }}>
+              <div style={{ width: `${progress}%`, height: '100%', background: '#10b981', transition: 'width 0.2s linear' }}></div>
+            </div>
+          </div>
+        )}
+        
         {items.map(({ label, value, color, small }) => (
           <div
             key={label}

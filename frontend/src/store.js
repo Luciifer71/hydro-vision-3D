@@ -1,18 +1,16 @@
 import { create } from 'zustand';
 import { supabase } from './lib/supabase.js';
+import { computeSessionRisk } from './lib/derive.js';
 
 const getBackendUrls = () => {
   if (typeof window === 'undefined') {
-    return { apiUrl: 'http://localhost:8000', wsUrl: 'ws://localhost:8000/ws/live-stream' };
+    return { apiUrl: '', wsUrl: 'ws://localhost:8000/ws/live-stream' };
   }
-  const hostname = window.location.hostname || 'localhost';
-  const protocol = window.location.protocol === 'https:' ? 'https:' : 'http:';
   const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const port = (window.location.port === '5173' || window.location.port === '3000' || window.location.port === '5174') ? '8000' : (window.location.port || '8000');
   
   return {
-    apiUrl: `${protocol}//${hostname}:${port}`,
-    wsUrl: `${wsProtocol}//${hostname}:${port}/ws/live-stream`
+    apiUrl: '',
+    wsUrl: `${wsProtocol}//${window.location.host}/ws/live-stream`
   };
 };
 
@@ -27,40 +25,25 @@ const CONFIG = {
   MAX_ALERTS: 15,
   EMA_ALPHA: 0.3,
   TYPE_LABELS: {
-    pothole: 'Pothole',
-    pothole_dry: 'Dry Pothole',
-    pothole_waterlogged: 'Waterlogged Pothole',
-    water_body: 'Water Body',
-    waterlogging_area: 'Waterlogging Area',
-    crack: 'Crack',
-    flooding: 'Flooding',
-    open_manhole: 'Open Manhole',
+    damaged_footpath: 'Damaged Footpath',
     drainage_overflow: 'Drainage Overflow',
-    damaged_footpath: 'Damaged Footpath'
+    open_manhole: 'Open Manhole',
+    potholes: 'Potholes',
+    waterlogging_area: 'Waterlogging Area'
   },
   TYPE_ICONS: {
-    pothole: 'P',
-    pothole_dry: 'P',
-    pothole_waterlogged: 'PW',
-    water_body: 'W',
-    waterlogging_area: 'WA',
-    crack: 'C',
-    flooding: 'F',
-    open_manhole: 'M',
+    damaged_footpath: 'DF',
     drainage_overflow: 'D',
-    damaged_footpath: 'DF'
+    open_manhole: 'M',
+    potholes: 'P',
+    waterlogging_area: 'WA'
   },
   TYPE_COLORS: {
-    pothole: '#ef4444',
-    pothole_dry: '#ef4444',
-    pothole_waterlogged: '#f59e0b',
-    water_body: '#00d4ff',
-    waterlogging_area: '#3b82f6',
-    crack: '#eab308',
-    flooding: '#a855f7',
+    damaged_footpath: '#f97316',
+    drainage_overflow: '#06b6d4',
     open_manhole: '#dc2626',
-    drainage_overflow: '#8b5cf6',
-    damaged_footpath: '#f97316'
+    potholes: '#ef4444',
+    waterlogging_area: '#3b82f6'
   },
   SEVERITY_COLORS: { LOW: '#10b981', MODERATE: '#f59e0b', HIGH: '#f97316', CRITICAL: '#ef4444' },
 };
@@ -82,14 +65,13 @@ export function parseGeoJsonFeatures(geojson) {
     const coords = feature.geometry?.coordinates || [73.1812, 22.3072];
     const lon = coords[0];
     const lat = coords[1];
-    const className = props.class_name || props.type || 'pothole_dry';
-    const volume = Number(props.estimated_volume_m3) || 0.05;
-    const confidence = props.confidence ?? 0.95;
+    const className = props.class_name || props.type || 'unknown';
+    const confidence = props.confidence != null ? props.confidence : null;
     const detectionsCount = props.detections_count || 1;
     const hazardId = props.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
 
-    const area = props.surface_area_m2 || (volume * 100);
-    const severity = props.severity || (volume >= 0.3 ? 'CRITICAL' : volume >= 0.15 ? 'HIGH' : volume >= 0.05 ? 'MODERATE' : 'LOW');
+    const area = props.surface_area_m2 != null ? Number(props.surface_area_m2) : null;
+    const severity = props.severity || '—';
 
     return {
       hazard_id: hazardId,
@@ -97,12 +79,11 @@ export function parseGeoJsonFeatures(geojson) {
       type: className,
       class_name: className,
       confidence: confidence,
-      estimated_volume_m3: volume,
       detections_count: detectionsCount,
       surface_area_m2: area,
       severity: severity,
       priority_score: Math.round(confidence * 100),
-      zone: `Zone ${String.fromCharCode(65 + (idx % 4))}`,
+      zone: props.zone || null,
       status: props.status || 'OPEN',
       first_detected: props.first_detected,
       last_detected: props.last_detected,
@@ -228,15 +209,14 @@ export const useStore = create((set, get) => ({
 
     const payload = hazards.map(h => ({
       hazard_id: h.hazard_id || h.track_id || 'HAZ-UNKNOWN',
-      class_name: h.class_name || h.type || 'pothole_dry',
-      confidence: Number(h.confidence || 0.95),
-      surface_area_m2: Number(h.surface_area_m2 || 0),
-      estimated_volume_m3: Number(h.estimated_volume_m3 || h.volume_m3 || 0),
+      class_name: h.class_name || h.type || 'unknown',
+      confidence: h.confidence != null ? Number(h.confidence) : null,
+      surface_area_m2: h.surface_area_m2 != null ? Number(h.surface_area_m2) : null,
       latitude: Number(h.location?.latitude ?? h.latitude ?? 22.3072),
       longitude: Number(h.location?.longitude ?? h.longitude ?? 73.1812),
-      severity: (h.severity || 'LOW').toUpperCase(),
+      severity: h.severity ? h.severity.toUpperCase() : '—',
       status: h.status || 'OPEN',
-      zone: h.zone || 'Zone-A'
+      zone: h.zone || '—'
     }));
 
     const { data, error } = await supabase
@@ -281,17 +261,8 @@ export const useStore = create((set, get) => ({
         streamRunning: ['LIVE', 'STREAMING'].includes(data.stream_status),
         telemetry: {
           ...t,
-          latitude: lat + (Math.random() - 0.5) * 0.00002,
-          longitude: lon + (Math.random() - 0.5) * 0.00002,
-          altitude: Math.max(15, t.altitude + (Math.random() - 0.5) * 0.3),
-          speed: Math.max(0, 4.2 + Math.sin(Date.now() / 3000) * 1.5),
-          verticalSpeed: (Math.random() - 0.5) * 0.4,
-          battery: Math.max(10, t.battery - 0.003),
-          rssi: -55 - Math.floor(Math.random() * 20),
-          satellites: 10 + Math.floor(Math.random() * 4),
-          heading: (t.heading + (Math.random() - 0.5) * 2 + 360) % 360,
-          pitch: t.pitch + (Math.random() - 0.5) * 0.5,
-          roll: t.roll + (Math.random() - 0.5) * 0.5,
+          latitude: lat,
+          longitude: lon,
           flightTime: state.streamRunning ? t.flightTime + 1 : t.flightTime,
         },
         timelineHistory: [...state.timelineHistory, { time: now, count: data.summary?.active_hazards || 0 }].slice(-CONFIG.CHART_HISTORY),
@@ -302,22 +273,12 @@ export const useStore = create((set, get) => ({
 
   updateLocalVideoFrame: (frameInfo) => {
     set((state) => {
-      const t = state.telemetry;
+      const t = state.telemetry || {};
       const fId = frameInfo.frameId ?? 0;
       const time = frameInfo.currentTime ?? 0;
-      const altitude = 24.5 + Math.sin(time / 4) * 1.8 + (Math.random() - 0.5) * 0.2;
-      const speed = Math.max(0, 5.4 + Math.cos(time / 3) * 2.1 + (Math.random() - 0.5) * 0.3);
-      const heading = (245 + (time * 1.5) + Math.sin(time) * 3) % 360;
-      const pitch = Math.sin(time / 2) * 3.5 + (Math.random() - 0.5) * 0.4;
-      const roll = Math.cos(time / 2.5) * 4.2 + (Math.random() - 0.5) * 0.4;
-      const lat = CONFIG.CENTER_LAT + Math.sin(time / 10) * 0.0008 + (Math.random() - 0.5) * 0.00001;
-      const lon = CONFIG.CENTER_LON + Math.cos(time / 10) * 0.0008 + (Math.random() - 0.5) * 0.00001;
-      const verticalSpeed = Math.cos(time / 4) * 0.4;
-      const battery = Math.max(15, 87 - (time / 30));
 
       const totalArea = state.hazards.reduce((sum, h) => sum + (Number(h.surface_area_m2) || 0), 0);
-      const hasCritical = state.hazards.some(h => (h.severity || severityFromArea(h.surface_area_m2)) === 'CRITICAL');
-      const riskLevel = hasCritical ? 'CRITICAL' : 'HIGH';
+      const { riskScore, riskLevel } = computeSessionRisk(state.hazards, {});
 
       const updatedState = {
         ...(state.currentState || {}),
@@ -330,9 +291,9 @@ export const useStore = create((set, get) => ({
           total_area_m2: totalArea,
           overall_risk: riskLevel,
           risk_level: riskLevel,
-          risk_score: hasCritical ? 95 : 70,
-          action: hasCritical ? 'Issue emergency response and traffic reroute.' : 'Dispatch local maintenance crew.',
-          alert_count: state.hazards.filter(h => ['CRITICAL','HIGH','MODERATE'].includes((h.severity || severityFromArea(h.surface_area_m2)).toUpperCase())).length,
+          risk_score: riskScore,
+          action: riskLevel === 'CRITICAL' ? 'Issue emergency response and traffic reroute.' : 'Dispatch local maintenance crew.',
+          alert_count: state.hazards.filter(h => ['CRITICAL','HIGH','MODERATE'].includes((h.severity || 'LOW').toUpperCase())).length,
         },
         hazards: state.hazards,
       };
@@ -342,20 +303,9 @@ export const useStore = create((set, get) => ({
         streamRunning: true,
         telemetry: {
           ...t,
-          latitude: lat,
-          longitude: lon,
-          altitude,
-          speed,
-          heading,
-          pitch,
-          roll,
-          verticalSpeed,
-          battery,
           flightTime: Math.floor(time),
-          rssi: -58 - Math.floor(Math.sin(time) * 10),
-          satellites: 12 + Math.floor(Math.sin(time / 5) * 2),
         },
-        trajectory: [...(state.trajectory || []), [lat, lon]].slice(-1000),
+        trajectory: state.trajectory || [],
       };
     });
   },
@@ -371,6 +321,7 @@ export const useStore = create((set, get) => ({
         if (geojson && geojson.features && geojson.features.length > 0) {
           const parsedHazards = parseGeoJsonFeatures(geojson);
           const totalArea = parsedHazards.reduce((sum, h) => sum + (Number(h.surface_area_m2) || 0), 0);
+          const { riskScore, riskLevel } = computeSessionRisk(parsedHazards, {});
           
           set((state) => ({
             hazards: parsedHazards,
@@ -383,10 +334,10 @@ export const useStore = create((set, get) => ({
                 active_hazards: parsedHazards.length,
                 total_affected_area: totalArea,
                 total_area_m2: totalArea,
-                overall_risk: 'CRITICAL',
-                risk_level: 'CRITICAL',
-                risk_score: 95,
-                action: 'Issue emergency response and traffic reroute.',
+                overall_risk: riskLevel,
+                risk_level: riskLevel,
+                risk_score: riskScore,
+                action: riskLevel === 'CRITICAL' ? 'Issue emergency response and traffic reroute.' : 'Dispatch local maintenance crew.',
                 alert_count: parsedHazards.length,
               },
               hazards: parsedHazards,
@@ -432,6 +383,7 @@ export const useStore = create((set, get) => ({
         if (raw.error) { addLog(`Backend error: ${raw.error}`); return; }
 
         const rawHazards = raw.telemetry || raw.hazards || [];
+        const stageStatus = raw.stage_status || {};
         
         get().updateLocalVideoFrame({
           frameId: raw.frame_id ?? 0,
@@ -441,12 +393,11 @@ export const useStore = create((set, get) => ({
         const incomingParsed = rawHazards.map((h, idx) => ({
           hazard_id: h.id ?? `HAZ-${String(idx + 1).padStart(4, '0')}`,
           track_id: h.id ?? idx + 1,
-          type: h.hazard ?? 'pothole_dry',
-          class_name: h.hazard ?? 'pothole_dry',
-          confidence: h.confidence ?? 1.0,
-          surface_area_m2: Number(h.volume_m3 ? h.volume_m3 * 50 : 0),
-          estimated_volume_m3: Number(h.volume_m3 ?? 0),
-          severity: severityFromArea(h.volume_m3 ?? 0),
+          type: h.hazard ?? 'unknown',
+          class_name: h.hazard ?? 'unknown',
+          confidence: h.confidence != null ? h.confidence : null,
+          surface_area_m2: h.surface_area_m2 != null ? Number(h.surface_area_m2) : null,
+          severity: h.severity ? h.severity.toUpperCase() : '—',
           status: 'OPEN',
           latitude: h.latitude,
           longitude: h.longitude,
@@ -459,13 +410,13 @@ export const useStore = create((set, get) => ({
           const hazardMap = new Map(state.hazards.map((h) => [h.hazard_id, h]));
           incomingParsed.forEach((h) => hazardMap.set(h.hazard_id, h));
           const accumulatedHazards = Array.from(hazardMap.values());
-          const totalArea = accumulatedHazards.reduce((sum, h) => sum + (Number(h.estimated_volume_m3) || 0), 0);
-          const riskLevel = totalArea > 2.0 ? 'CRITICAL' : totalArea > 0.5 ? 'HIGH' : 'LOW';
-          const rScore = riskLevel === 'CRITICAL' ? 100 : 25;
+          const totalArea = accumulatedHazards.reduce((sum, h) => sum + (Number(h.surface_area_m2) || 0), 0);
+          const { riskScore, riskLevel } = computeSessionRisk(accumulatedHazards, raw.summary || {});
 
           return {
             stream_status: raw.status === 'online' ? 'LIVE' : 'STREAMING',
             frame_id: raw.frame_id ?? 0,
+            stage_status: stageStatus,
             hazards: accumulatedHazards,
             
             timelineHistory: [
@@ -475,7 +426,7 @@ export const useStore = create((set, get) => ({
             
             riskHistory: [
               ...state.riskHistory, 
-              { time: now, score: rScore }
+              { time: now, score: riskScore }
             ].slice(-CONFIG.CHART_HISTORY),
 
             currentState: {
@@ -486,7 +437,7 @@ export const useStore = create((set, get) => ({
                 total_area_m2: totalArea,
                 overall_risk: riskLevel,
                 risk_level: riskLevel,
-                risk_score: rScore,
+                risk_score: riskScore,
                 action: riskLevel === 'CRITICAL' ? 'Issue emergency response and traffic reroute.' : 'Dispatch local maintenance crew.',
                 alert_count: accumulatedHazards.length,
               },

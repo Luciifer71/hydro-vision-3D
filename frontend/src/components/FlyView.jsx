@@ -7,7 +7,7 @@ import HazardFeed from './HazardFeed.jsx';
 import MissionStatusPanel from './MissionStatusPanel.jsx';
 import ErrorBoundary from './ErrorBoundary.jsx';
 import ConfidenceSlider from './ConfidenceSlider.jsx';
-import { useLiveHazards } from '../hooks/useLiveHazards';
+import { computeSessionRisk } from '../lib/derive.js';
 
 export default function FlyView() {
   // 1. Extract telemetry and store state safely
@@ -18,29 +18,18 @@ export default function FlyView() {
   const videoPath = store.videoPath || '/sample-drone.mp4';
   const updateLocalVideoFrame = store.updateLocalVideoFrame;
 
-  // 2. Extract live WebSocket telemetry from custom hook
-  const liveHazards = useLiveHazards() || {};
-  const hazards = liveHazards.hazards || [];
-  const activeFrameHazards = liveHazards.activeFrameHazards || [];
-  const totalMarkers = liveHazards.totalMarkers || 0;
-  const totalVolume = liveHazards.totalVolume || 0;
-  const wsStatus = liveHazards.wsStatus || 'offline';
-
-  // 3. Derived UI metrics
-  const displayHazards = activeFrameHazards.length > 0 ? activeFrameHazards : (hazards.length > 0 ? hazards : (store.hazards || []));
-  const activeHazards = totalMarkers || displayHazards.length;
-  const totalArea = Number(totalVolume) || 0;
+  // 2. State mapped from store
+  const hazards = store.hazards || [];
+  const activeFrameHazards = hazards; // Use store's latest hazards since tracking handles persistence
+  const displayHazards = hazards;
+  const activeHazards = displayHazards.length;
   
-  const riskLevel = (currentState.summary && currentState.summary.overall_risk) || 
-    (totalArea > 2.0 ? 'CRITICAL' : 'LOW');
-  
-  const riskScore = (currentState.summary && currentState.summary.risk_score) 
-    ? currentState.summary.risk_score * 25 
-    : 50;
+  const totalArea = hazards.reduce((sum, h) => sum + (Number(h.surface_area_m2) || 0), 0);
+  const { riskScore, riskLevel } = computeSessionRisk(displayHazards, currentState.summary || {});
     
   const isCritical = riskLevel === 'CRITICAL';
   const frameId = (currentState && currentState.frame_id !== undefined) ? currentState.frame_id : 0;
-  const isLive = wsStatus === 'online';
+  const isLive = store.connectionStatus === 'LIVE';
 
   return (
     <div className="fly-layout" style={{ flex: 1, minHeight: 0 }}>
@@ -49,7 +38,7 @@ export default function FlyView() {
         <ErrorBoundary name="Video Player">
           {isLive ? (
             <img 
-              src="http://localhost:8000/api/stream_video" 
+              src="/api/stream_video" 
               alt="Hydro-Vision 3D AI Dual Perception Stream" 
               style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
             />

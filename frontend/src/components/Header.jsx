@@ -82,7 +82,7 @@ export default function Header() {
 
     try {
       // 1. Push file to FastAPI backend
-      const response = await fetch('http://localhost:8000/api/upload-video', {
+      const response = await fetch('/api/upload-video', {
         method: 'POST',
         body: formData,
       });
@@ -107,7 +107,7 @@ export default function Header() {
   const handleConnectStream = async () => {
     setIsProcessing(true);
     try {
-      const response = await fetch('http://localhost:8000/api/stream/start', { method: 'POST' });
+      const response = await fetch('/api/stream/start', { method: 'POST' });
       if (response.ok) {
         console.log('[SYSTEM] Hardware stream activated.');
         connect(); // Update UI
@@ -122,7 +122,7 @@ export default function Header() {
   const handleDisconnectStream = async () => {
     setIsProcessing(true);
     try {
-      const response = await fetch('http://localhost:8000/api/stream/stop', { method: 'POST' });
+      const response = await fetch('/api/stream/stop', { method: 'POST' });
       if (response.ok) {
         console.log('[SYSTEM] Hardware stream halted. Entering standby.');
         disconnect(); // Update UI
@@ -144,9 +144,16 @@ export default function Header() {
           </svg>
           <div>
             <div style={{ fontSize: '0.9rem', fontWeight: 800, color: '#ffbb00', letterSpacing: 1 }}>HYDRO-VISION</div>
-            <div style={{ fontSize: '0.55rem', color: '#666', letterSpacing: 1 }}>v2.1.0 · 3D GCS</div>
+            <div style={{ fontSize: '0.55rem', color: '#666', letterSpacing: 1 }}>v3.0.0 · 3D GCS</div>
           </div>
         </div>
+
+        {/* Schema Version Warning */}
+        {currentState?.context?.schema_version && currentState.context.schema_version !== '1.0' && (
+          <div style={{ marginLeft: 8, padding: '4px 8px', background: '#cc0000', color: '#fff', fontSize: '0.65rem', fontWeight: 700, borderRadius: 4 }}>
+            ⚠️ SCHEMA {currentState.context.schema_version} MISMATCH (EXPECTED 1.0)
+          </div>
+        )}
 
         {/* Battery indicator */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '0 8px', borderLeft: '1px solid #3a3a3a' }}>
@@ -160,8 +167,8 @@ export default function Header() {
         <div style={{ display: 'flex', gap: 10, padding: '0 8px', borderLeft: '1px solid #3a3a3a' }}>
           <SensorIcon label="Gyro" active={connectionStatus === 'LIVE'} />
           <SensorIcon label="Accel" active={connectionStatus === 'LIVE'} />
-          <SensorIcon label="Mag" active={true} />
-          <SensorIcon label="Baro" active={true} />
+          <SensorIcon label="Mag" active={connectionStatus === 'LIVE'} />
+          <SensorIcon label="Baro" active={connectionStatus === 'LIVE'} />
           <SensorIcon label="GPS" active={telemetry?.satellites >= 4 && isLive} />
           <SensorIcon label="Sonar" active={false} />
         </div>
@@ -187,20 +194,30 @@ export default function Header() {
 
         {/* Feed Mode Controls */}
         {!isLive ? (
-          <button
-            className="btn"
-            onClick={switchToLiveFeed}
-            title="Return to real-time live drone flight feed and restore telemetry"
-            style={{
-              background: 'linear-gradient(135deg, #10b981, #059669)', color: '#1a1a1a',
-              fontWeight: 800, padding: '4px 12px', fontSize: '0.72rem', borderRadius: 4,
-              cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
-              border: 'none', boxShadow: '0 0 8px rgba(16, 185, 129, 0.4)',
-            }}
-          >
-            <span>●</span>
-            Switch to Live Feed
-          </button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            <div style={{
+              display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', 
+              borderRadius: 4, background: 'rgba(255, 187, 0, 0.12)', border: '1px solid rgba(255, 187, 0, 0.3)', 
+              color: '#ffbb00', fontSize: '0.68rem', fontWeight: 800
+            }}>
+              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ffbb00', display: 'inline-block' }} />
+              VIDEO PROCESSING
+            </div>
+            <button
+              className="btn"
+              onClick={switchToLiveFeed}
+              title="Return to real-time live drone flight feed and restore telemetry"
+              style={{
+                background: 'transparent', color: '#10b981',
+                fontWeight: 800, padding: '4px 12px', fontSize: '0.72rem', borderRadius: 4,
+                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+                border: '1px solid #10b981',
+              }}
+            >
+              <span>●</span>
+              Switch to Live Feed
+            </button>
+          </div>
         ) : (
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', 

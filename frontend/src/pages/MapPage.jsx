@@ -1,10 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import HazardMap from '../components/HazardMap.jsx';
 import { useStore } from '../store.js';
+import EmptySessionState from '../components/EmptySessionState.jsx';
 
 export default function MapPage() {
-  const { hazards = [] } = useStore();
+  const { hazards = [], currentState } = useStore();
   const [currentTime, setCurrentTime] = useState('');
+
+  if (!currentState) return <EmptySessionState message="No Map Data Loaded" />;
 
   // Live ticking clock for tracking telemetry updates
   useEffect(() => {
@@ -15,7 +18,7 @@ export default function MapPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const totalArea = hazards.reduce((s, h) => s + (Number(h.surface_area_m2 || (h.estimated_volume_m3 * 8.5)) || 0), 0);
+  const totalArea = hazards.reduce((s, h) => s + (Number(h.surface_area_m2) || 0), 0);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
@@ -51,11 +54,9 @@ export default function MapPage() {
           <div>
             <div style={{ fontSize: '0.7rem', fontWeight: 700, color: 'var(--text-muted)', marginBottom: 8, letterSpacing: 1 }}>HAZARD TYPES (GeoJSON)</div>
             {[
-              ['#ef4444','Pothole (Dry)'],
-              ['#f59e0b','Pothole (Waterlogged)'],
+              ['#ef4444','Potholes'],
               ['#3b82f6','Waterlogging Area'],
               ['#dc2626','Open Manhole'],
-              ['#eab308','Crack'],
               ['#8b5cf6','Drainage Overflow'],
               ['#f97316','Damaged Footpath'],
             ].map(([c,l]) => (

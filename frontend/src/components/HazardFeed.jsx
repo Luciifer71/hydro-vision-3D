@@ -20,7 +20,7 @@ export default function HazardFeed({ hazards = [], activeHazards = 0 }) {
           <div style={{ color: '#666', fontSize: '0.75rem', textAlign: 'center', marginTop: 20 }}>No hazards detected</div>
         ) : (
           displayList.map((h, i) => {
-            const vol = Number(h.estimated_volume_m3 || h.surface_area_m2 || 0);
+            const area = Number(h.surface_area_m2 || 0);
             const sev = (h.severity || 'LOW').toUpperCase();
             
             // Badge color coding
@@ -35,7 +35,7 @@ export default function HazardFeed({ hazards = [], activeHazards = 0 }) {
                 <span style={{ fontFamily: 'monospace', color: '#aaa', display: 'flex', gap: '6px', alignItems: 'center' }}>
                   <span style={{ color: '#e0e0e0', fontWeight: 600 }}>{h.hazard_id || `HAZ-${i}`}</span> 
                   <span style={{ color: '#555' }}>|</span> 
-                  <span style={{ color: '#ffbb00' }}>{vol.toFixed(2)} m³</span>
+                  <span style={{ color: '#ffbb00' }}>{area.toFixed(1)} m²</span>
                 </span>
                 <span style={{ padding: '2px 6px', borderRadius: 3, fontSize: '0.65rem', fontWeight: 700, color: sevColor.color, background: sevColor.bg, border: `1px solid ${sevColor.borderColor}` }}>
                   {sev}

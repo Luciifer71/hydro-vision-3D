@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { useStore } from '../store.js';
+import EmptySessionState from '../components/EmptySessionState.jsx';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -9,36 +10,40 @@ ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend)
 ChartJS.defaults.animation.duration = 0;
 
 export default function DepthPage() {
-  const { hazards = [] } = useStore();
+  const { hazards = [], currentState } = useStore();
+
+  if (!currentState) return <EmptySessionState message="No Depth Analysis Available" />;
 
   const metrics = useMemo(() => {
-    let totalVolume = 0;
     let totalArea = 0;
-    let maxDepth = 0;
+    let maxDepthIndex = 0;
+    let depthSum = 0;
+    let depthCount = 0;
 
     const list = hazards.map((h, i) => {
-      const vol = Number(h.estimated_volume_m3 || h.volume_m3) || 0.05;
-      const area = Number(h.surface_area_m2) || (vol * 100);
-      const depthCm = Math.min(45, Math.max(2.5, (vol / Math.max(0.01, area)) * 350));
+      const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : null;
+      const depthIndex = h.relative_depth_index != null ? Number(h.relative_depth_index) : null;
       
-      totalVolume += vol;
-      totalArea += area;
-      if (depthCm > maxDepth) maxDepth = depthCm;
+      if (area != null) totalArea += area;
+      if (depthIndex != null) {
+        if (depthIndex > maxDepthIndex) maxDepthIndex = depthIndex;
+        depthSum += depthIndex;
+        depthCount++;
+      }
 
       return {
         id: h.hazard_id || h.track_id || `HAZ-${String(i + 1).padStart(4, '0')}`,
-        className: h.class_name || h.type || 'pothole_dry',
+        className: h.class_name || h.type || 'unknown',
         area,
-        vol,
-        depthCm,
-        confidence: h.confidence ?? 0.95,
+        depthIndex,
+        confidence: h.confidence != null ? h.confidence : null,
         passes: h.detections_count || 1,
-        severity: h.severity || 'LOW'
+        severity: h.severity || '—'
       };
     });
 
-    const avgDepth = list.length ? list.reduce((s, x) => s + x.depthCm, 0) / list.length : 0;
-    return { list, totalVolume, totalArea, maxDepth, avgDepth };
+    const avgDepthIndex = depthCount > 0 ? depthSum / depthCount : 0;
+    return { list, totalArea, maxDepthIndex, avgDepthIndex };
   }, [hazards]);
 
   const chartSlice = metrics.list.slice(0, 12);
@@ -46,9 +51,9 @@ export default function DepthPage() {
     labels: chartSlice.length > 0 ? chartSlice.map(x => x.id) : ['No Data'],
     datasets: [
       {
-        label: 'Max Monocular Depth (cm)',
-        data: chartSlice.length > 0 ? chartSlice.map(x => Number(x.depthCm.toFixed(1))) : [0],
-        backgroundColor: chartSlice.length > 0 ? chartSlice.map(x => x.depthCm > 15 ? '#ef4444' : x.depthCm > 8 ? '#f59e0b' : '#10b981') : ['#333'],
+        label: 'Relative Depth Index',
+        data: chartSlice.length > 0 ? chartSlice.map(x => x.depthIndex != null ? Number(x.depthIndex.toFixed(3)) : 0) : [0],
+        backgroundColor: chartSlice.length > 0 ? chartSlice.map(x => x.depthIndex != null && x.depthIndex > 0.7 ? '#ef4444' : (x.depthIndex != null && x.depthIndex > 0.4 ? '#f59e0b' : '#10b981')) : ['#333'],
         borderRadius: 4,
       }
     ],
@@ -61,14 +66,14 @@ export default function DepthPage() {
       legend: { display: false },
       tooltip: {
         callbacks: {
-          label: (ctx) => `Depth: ${ctx.raw} cm`
+          label: (ctx) => `Depth Index: ${ctx.raw}`
         }
       }
     },
     scales: {
       y: {
         beginAtZero: true,
-        title: { display: true, text: 'Depth (cm)', color: '#94a3b8' },
+        title: { display: true, text: 'Relative Index', color: '#94a3b8' },
         grid: { color: 'rgba(255,255,255,0.05)' },
         ticks: { color: '#94a3b8' }
       },
@@ -85,17 +90,17 @@ export default function DepthPage() {
       <div className="info-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         <div className="info-card" style={{ borderColor: 'rgba(16, 185, 129, 0.4)', background: '#121212', padding: 12, borderRadius: 6, border: '1px solid #333' }}>
           <span style={{ fontSize: '0.65rem', background: '#10b981', color: '#1a1a1a', fontWeight: 800, padding: '2px 6px', borderRadius: 3, float: 'right' }}>Active</span>
-          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: '#10b981' }}>Monocular Depth</h4>
+          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: '#10b981' }}>Relative Depth Index</h4>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            Estimate per-pixel depth from a single drone camera frame using Depth Anything V2 model.
+            Estimate relative depth from a single drone camera frame using Depth Anything V2 model. Values range 0.0 to 1.0.
           </p>
         </div>
 
         <div className="info-card" style={{ borderColor: 'rgba(255, 187, 0, 0.4)', background: '#121212', padding: 12, borderRadius: 6, border: '1px solid #333' }}>
           <span style={{ fontSize: '0.65rem', background: '#ffbb00', color: '#1a1a1a', fontWeight: 800, padding: '2px 6px', borderRadius: 3, float: 'right' }}>Active</span>
-          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: '#ffbb00' }}>Volume Estimation</h4>
+          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: '#ffbb00' }}>Area Estimation</h4>
           <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            Calculate pothole volume in m³ by integrating depth maps over segmented regions.
+            Calculate pothole spatial area in m² using drone altitude and ground sample distance.
           </p>
         </div>
 
@@ -119,10 +124,10 @@ export default function DepthPage() {
       {/* KPI Cards */}
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
         {[
-          { label: 'Total Volume Displacement', value: `${metrics.totalVolume.toFixed(3)} m³` },
-          { label: 'Avg Monocular Depth', value: `${metrics.avgDepth.toFixed(1)} cm` },
-          { label: 'Max Depth Discovered', value: `${metrics.maxDepth.toFixed(1)} cm` },
-          { label: 'Depth Engine Resolution', value: '0.025 m/px (GSD)' },
+          { label: 'Total Area Detected', value: `${metrics.totalArea.toFixed(1)} m²` },
+          { label: 'Avg Depth Index', value: `${metrics.avgDepthIndex.toFixed(3)}` },
+          { label: 'Max Depth Index', value: `${metrics.maxDepthIndex.toFixed(3)}` },
+          { label: 'Depth Engine', value: 'Depth Anything V2' },
         ].map(({ label, value }) => (
           <div className="kpi-card" key={label}>
             <span className="kpi-label">{label}</span>
@@ -156,8 +161,7 @@ export default function DepthPage() {
                 <th>Hazard ID</th>
                 <th>Class Name</th>
                 <th>Surface Area (m²)</th>
-                <th>Monocular Depth (cm)</th>
-                <th>Estimated Volume (m³)</th>
+                <th>Relative Depth Index</th>
                 <th>Confidence</th>
                 <th>Depth Classification</th>
               </tr>
@@ -178,17 +182,14 @@ export default function DepthPage() {
                         {item.className}
                       </code>
                     </td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{item.area.toFixed(2)}</td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: item.depthCm > 15 ? '#ef4444' : '#f59e0b' }}>
-                      {item.depthCm.toFixed(1)} cm
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{item.area != null ? item.area.toFixed(1) : '—'}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: (item.depthIndex != null && item.depthIndex > 0.7) ? '#ef4444' : '#f59e0b' }}>
+                      {item.depthIndex != null ? item.depthIndex.toFixed(3) : '—'}
                     </td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#ffbb00' }}>
-                      {item.vol.toFixed(3)} m³
-                    </td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{(item.confidence * 100).toFixed(1)}%</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{item.confidence != null ? (item.confidence * 100).toFixed(1) + '%' : '—'}</td>
                     <td>
-                      <span className={`sev-badge ${(item.depthCm > 15 ? 'CRITICAL' : item.depthCm > 8 ? 'HIGH' : 'LOW').toLowerCase()}`}>
-                        {item.depthCm > 15 ? 'DEEP VOID' : item.depthCm > 8 ? 'MODERATE DEPRESSION' : 'SURFACE DEFECT'}
+                      <span className={item.depthIndex != null ? `sev-badge ${(item.depthIndex > 0.7 ? 'CRITICAL' : item.depthIndex > 0.4 ? 'HIGH' : 'LOW').toLowerCase()}` : 'type-badge'}>
+                        {item.depthIndex != null ? (item.depthIndex > 0.7 ? 'DEEP VOID' : item.depthIndex > 0.4 ? 'MODERATE DEPRESSION' : 'SURFACE DEFECT') : '—'}
                       </span>
                     </td>
                   </tr>

@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore, CONFIG } from '../store.js';
+import EmptySessionState from '../components/EmptySessionState.jsx';
 
 export default function DetectionsPage() {
   const { 
@@ -10,10 +11,13 @@ export default function DetectionsPage() {
     setDetectionTypeFilter, 
     updateHazardStatus,
     streamRunning,
-    syncHazardsToSupabase
+    syncHazardsToSupabase,
+    currentState
   } = useStore();
 
   const [isSyncing, setIsSyncing] = useState(false);
+
+  if (!currentState) return <EmptySessionState message="No Detections Loaded" />;
 
   // 1. Filter Logic
   const filtered = hazards.filter(h => {
@@ -52,10 +56,10 @@ export default function DetectionsPage() {
     if (sevA !== sevB) {
       return sevB - sevA; // Highest severity first
     }
-    // If severity is the same, sort by volume/area
-    const volA = Number(a.estimated_volume_m3 || a.surface_area_m2 || 0);
-    const volB = Number(b.estimated_volume_m3 || b.surface_area_m2 || 0);
-    return volB - volA;
+    // If severity is the same, sort by area
+    const areaA = Number(a.surface_area_m2 || 0);
+    const areaB = Number(b.surface_area_m2 || 0);
+    return areaB - areaA;
   });
 
   // 3. Performance Protection: Only render top 100 rows to prevent DOM lag during live video stream
@@ -111,14 +115,11 @@ export default function DetectionsPage() {
             />
             <select className="form-select" style={{ width: 220 }} value={detectionTypeFilter || 'all'} onChange={e => setDetectionTypeFilter(e.target.value)}>
               <option value="all">All Types</option>
-              <option value="pothole">Pothole (All Types)</option>
-              <option value="pothole_dry">Pothole (Dry)</option>
-              <option value="pothole_waterlogged">Pothole (Waterlogged)</option>
-              <option value="waterlogging_area">Waterlogging Area</option>
-              <option value="open_manhole">Open Manhole</option>
-              <option value="crack">Crack</option>
-              <option value="drainage_overflow">Drainage Overflow</option>
+              <option value="potholes">Potholes</option>
               <option value="damaged_footpath">Damaged Footpath</option>
+              <option value="drainage_overflow">Drainage Overflow</option>
+              <option value="open_manhole">Open Manhole</option>
+              <option value="waterlogging_area">Waterlogging Area</option>
             </select>
           </div>
         </div>
@@ -128,7 +129,7 @@ export default function DetectionsPage() {
           <table className="data-table" style={{ width: '100%' }}>
             <thead style={{ position: 'sticky', top: 0, background: '#1e1e1e', zIndex: 10 }}>
               <tr>
-                <th>Track ID</th><th>Type</th><th>Confidence</th><th>Volume (m³)</th>
+                <th>Track ID</th><th>Type</th><th>Confidence</th><th>Area (m²)</th>
                 <th>Location (Lat, Lon)</th><th>Severity</th><th>Priority</th><th>Zone</th><th>Status</th><th>Action</th>
               </tr>
             </thead>
@@ -141,7 +142,7 @@ export default function DetectionsPage() {
                 </tr>
               ) : (
                 displayList.map((h, idx) => {
-                  const vol = Number(h.estimated_volume_m3 || h.surface_area_m2) || 0;
+                  const area = Number(h.surface_area_m2) || 0;
                   const sev = (h.severity || 'LOW').toLowerCase();
                   const lat = h.location?.latitude ?? h.latitude;
                   const lon = h.location?.longitude ?? h.longitude;
@@ -155,12 +156,12 @@ export default function DetectionsPage() {
                       <td style={{ fontFamily: 'var(--font-mono)', color: '#ffbb00' }}>{uid}</td>
                       <td><span className="type-badge" style={{ background: '#222' }}>{typeIcon} {typeLabel}</span></td>
                       <td>{((h.confidence ?? 1) * 100).toFixed(1)}%</td>
-                      <td style={{ fontWeight: 600 }}>{vol.toFixed(2)}</td>
+                      <td style={{ fontWeight: 600 }}>{area.toFixed(1)}</td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: '#888' }}>
                         {typeof lat === 'number' ? lat.toFixed(5) : '—'}, {typeof lon === 'number' ? lon.toFixed(5) : '—'}
                       </td>
                       <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
-                      <td style={{ fontFamily: 'var(--font-mono)' }}>{h.priority_score ?? (vol * 10).toFixed(0)}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>{h.priority_score ?? (area * 10).toFixed(0)}</td>
                       <td style={{ fontSize: '0.72rem', color: '#888' }}>{h.zone || '—'}</td>
                       <td>
                         <span style={{ 

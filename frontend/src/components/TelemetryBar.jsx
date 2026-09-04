@@ -1,4 +1,5 @@
 import { useStore } from '../store.js';
+import { computeSessionRisk } from '../lib/derive.js';
 
 function fmtTime(secs) {
   const m = Math.floor(secs / 60).toString().padStart(2, '0');
@@ -7,9 +8,9 @@ function fmtTime(secs) {
 }
 
 export default function TelemetryBar() {
-  const { telemetry, currentState, connectionStatus, feedMode, switchToLiveFeed } = useStore();
+  const { telemetry, currentState, connectionStatus, feedMode, switchToLiveFeed, hazards } = useStore();
   const t = telemetry;
-  const riskLevel = currentState?.summary?.overall_risk || 'LOW';
+  const { riskLevel } = computeSessionRisk(hazards || [], currentState?.summary || {});
   const riskColor = { LOW: 'good', MODERATE: 'warn', HIGH: 'warn', CRITICAL: 'danger' }[riskLevel] || 'good';
 
   const isLive = feedMode === 'live';
@@ -35,11 +36,6 @@ export default function TelemetryBar() {
           <div className="tele-item">
             <span className="tele-label">VIDEO TIME</span>
             <span className="tele-value">{fmtTime(t.flightTime)}</span>
-          </div>
-
-          <div className="tele-item">
-            <span className="tele-label">RISK LEVEL</span>
-            <span className={`tele-value ${riskColor}`}>{riskLevel}</span>
           </div>
 
           <div className="tele-item">
@@ -75,77 +71,84 @@ export default function TelemetryBar() {
 
   return (
     <div className="tele-bar">
-      <div className="tele-item">
-        <span className="tele-label">ALT</span>
-        <span className={`tele-value ${connectionStatus === 'LIVE' ? 'good' : ''}`}>
-          {t.altitude.toFixed(1)}
-        </span>
-        <span className="tele-unit">m</span>
-      </div>
-
-      <div className="tele-item">
-        <span className="tele-label">SPD</span>
-        <span className="tele-value">{t.speed.toFixed(1)}</span>
-        <span className="tele-unit">m/s</span>
-      </div>
-
-      <div className="tele-item">
-        <span className="tele-label">V.SPD</span>
-        <span className={`tele-value ${t.verticalSpeed >= 0 ? '' : 'warn'}`}>
-          {t.verticalSpeed >= 0 ? '+' : ''}{t.verticalSpeed.toFixed(1)}
-        </span>
-        <span className="tele-unit">m/s</span>
-      </div>
-
-      <div className="tele-item">
-        <span className="tele-label">HDG</span>
-        <span className="tele-value">{Math.round(t.heading)}°</span>
-      </div>
-
-      <div className="tele-item">
-        <span className="tele-label">LAT</span>
-        <span className="tele-value" style={{ fontSize: '0.72rem' }}>{t.latitude.toFixed(5)}</span>
-      </div>
-
-      <div className="tele-item">
-        <span className="tele-label">LON</span>
-        <span className="tele-value" style={{ fontSize: '0.72rem' }}>{t.longitude.toFixed(5)}</span>
-      </div>
-
-      <div className="tele-item">
-        <span className="tele-label">BATT</span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <div className="batt-bar">
-            <div className="batt-bar-fill" style={{ width: `${battPct}%`, background: battColor }} />
-            <div className="batt-tip" />
-          </div>
-          <span className={`tele-value ${battClass}`}>{battPct}%</span>
+      {connectionStatus !== 'LIVE' ? (
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', paddingLeft: 16 }}>
+          <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '0.75rem', letterSpacing: '1px' }}>
+            TELEMETRY: NOT AVAILABLE
+          </span>
+          <span style={{ color: '#888', fontSize: '0.75rem', marginLeft: 12 }}>
+            (No live drone feed signal)
+          </span>
         </div>
-      </div>
+      ) : (
+        <>
+          <div className="tele-item">
+            <span className="tele-label">ALT</span>
+            <span className="tele-value good">{t.altitude.toFixed(1)}</span>
+            <span className="tele-unit">m</span>
+          </div>
 
-      <div className="tele-item">
-        <span className="tele-label">RSSI</span>
-        <span className={`tele-value ${rssiClass}`}>{t.rssi}</span>
-        <span className="tele-unit">dBm</span>
-      </div>
+          <div className="tele-item">
+            <span className="tele-label">SPD</span>
+            <span className="tele-value">{t.speed.toFixed(1)}</span>
+            <span className="tele-unit">m/s</span>
+          </div>
 
-      <div className="tele-item">
-        <span className="tele-label">SAT</span>
-        <span className={`tele-value ${t.satellites >= 8 ? 'good' : 'warn'}`}>{t.satellites}</span>
-      </div>
+          <div className="tele-item">
+            <span className="tele-label">V.SPD</span>
+            <span className={`tele-value ${t.verticalSpeed >= 0 ? '' : 'warn'}`}>
+              {t.verticalSpeed >= 0 ? '+' : ''}{t.verticalSpeed.toFixed(1)}
+            </span>
+            <span className="tele-unit">m/s</span>
+          </div>
 
-      <div className="tele-item">
-        <span className="tele-label">TIME</span>
-        <span className="tele-value">{fmtTime(t.flightTime)}</span>
-      </div>
+          <div className="tele-item">
+            <span className="tele-label">HDG</span>
+            <span className="tele-value">{Math.round(t.heading)}°</span>
+          </div>
 
-      <div className="tele-item">
-        <span className="tele-label">RISK</span>
-        <span className={`tele-value ${riskColor}`}>{riskLevel}</span>
-      </div>
+          <div className="tele-item">
+            <span className="tele-label">LAT</span>
+            <span className="tele-value" style={{ fontSize: '0.72rem' }}>{t.latitude.toFixed(5)}</span>
+          </div>
+
+          <div className="tele-item">
+            <span className="tele-label">LON</span>
+            <span className="tele-value" style={{ fontSize: '0.72rem' }}>{t.longitude.toFixed(5)}</span>
+          </div>
+
+          <div className="tele-item">
+            <span className="tele-label">BATT</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <div className="batt-bar">
+                <div className="batt-bar-fill" style={{ width: `${battPct}%`, background: battColor }} />
+                <div className="batt-tip" />
+              </div>
+              <span className={`tele-value ${battClass}`}>{battPct}%</span>
+            </div>
+          </div>
+
+          <div className="tele-item">
+            <span className="tele-label">RSSI</span>
+            <span className={`tele-value ${rssiClass}`}>{t.rssi}</span>
+            <span className="tele-unit">dBm</span>
+          </div>
+
+          <div className="tele-item">
+            <span className="tele-label">SAT</span>
+            <span className={`tele-value ${t.satellites >= 8 ? 'good' : 'warn'}`}>{t.satellites}</span>
+          </div>
+
+          <div className="tele-item">
+            <span className="tele-label">TIME</span>
+            <span className="tele-value">{fmtTime(t.flightTime)}</span>
+          </div>
+        </>
+      )}
+
 
       {/* RTL Warning if battery < 20% and there's a critical hazard */}
-      {battPct < 20 && currentState?.summary?.overall_risk === 'CRITICAL' && (
+      {battPct < 20 && riskLevel === 'CRITICAL' && (
         <div className="tele-item" style={{ background: 'rgba(239,68,68,0.15)', borderRadius: 4, padding: '2px 10px' }}>
           <span style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: 700, animation: 'pulse 1s infinite' }}>
             !! RTL ADVISED

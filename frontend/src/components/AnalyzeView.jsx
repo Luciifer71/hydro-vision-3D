@@ -4,8 +4,9 @@ import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
   ArcElement, BarElement, Title, Tooltip, Legend, Filler,
 } from 'chart.js';
-import { useStore, CONFIG, severityFromArea } from '../store.js';
+import { useStore, CONFIG } from '../store.js';
 import HazardMap from './HazardMap.jsx';
+import { computeSessionRisk } from '../lib/derive.js';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, BarElement, Title, Tooltip, Legend, Filler);
 
@@ -61,8 +62,8 @@ export default function AnalyzeView() {
   // Severity counts
   const sevCounts = { LOW: 0, MODERATE: 0, HIGH: 0, CRITICAL: 0 };
   hazards.forEach(h => { 
-    const s = h.severity || severityFromArea(h.surface_area_m2 || h.estimated_volume_m3);
-    if (sevCounts[s] !== undefined) sevCounts[s]++; 
+    const s = h.severity && h.severity !== '—' ? h.severity.toUpperCase() : null;
+    if (s && sevCounts[s] !== undefined) sevCounts[s]++; 
   });
   
   const sevData = {
@@ -74,25 +75,24 @@ export default function AnalyzeView() {
     }],
   };
 
-  // Dynamic Hazard Classification
-const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
+  const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
   const typeCounts = {};
   typeKeys.forEach(k => { typeCounts[k] = 0; });
 
-  // 🟢 FIX: Sort keys by length descending. 
-  // This forces 'pothole_waterlogged' to be checked before 'pothole'
-  const sortedTypeKeys = [...typeKeys].sort((a, b) => b.length - a.length);
-
   hazards.forEach(h => {
-    const typeStr = (h.class_name || h.type || '').toLowerCase();
+    let typeStr = (h.class_name || h.type || 'unknown').toLowerCase();
     
-    // Search using the length-sorted array
-    const matchedKey = sortedTypeKeys.find(k => typeStr.includes(k));
+    // Exact match fallback to robust matching
+    let matchedKey = typeKeys.includes(typeStr) ? typeStr : typeKeys.find(k => typeStr.includes(k));
     
     if (matchedKey) {
       typeCounts[matchedKey]++;
-    } else if (typeKeys.length > 0) {
-      typeCounts[typeKeys[0]]++; // Safe fallback
+    } else {
+      typeCounts['unknown'] = (typeCounts['unknown'] || 0) + 1;
+      if (!typeKeys.includes('unknown')) {
+        typeKeys.push('unknown');
+        CONFIG.TYPE_LABELS['unknown'] = 'Unknown';
+      }
     }
   });
 
@@ -122,13 +122,11 @@ const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
   };
 
   // Derived metrics
-  const totalVolume = hazards.reduce((acc, curr) => acc + (Number(curr.estimated_volume_m3 || curr.surface_area_m2) || 0), 0);
+  const totalArea = hazards.reduce((acc, curr) => acc + (Number(curr.surface_area_m2) || 0), 0);
   const summary = currentState?.summary || {};
-  const riskLevel = summary.overall_risk || summary.risk_level || (totalVolume > 2.0 ? 'CRITICAL' : 'LOW');
   
-  // FIX: Gauge value capped between 0 and 100 directly without 25x multiplier
-  const rawRiskScore = summary.risk_score !== undefined ? summary.risk_score : (riskLevel === 'CRITICAL' ? 100 : 25);
-  const riskScoreDisplay = Math.min(100, Math.max(0, Math.round(rawRiskScore)));
+  const { riskScore, riskLevel } = computeSessionRisk(hazards, summary);
+  const riskScoreDisplay = riskScore;
 
   const sevColors = { LOW: '#10b981', MODERATE: '#ffbb00', HIGH: '#ff8800', CRITICAL: '#cc0000' };
 
@@ -136,22 +134,22 @@ const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "MUNICIPAL BRIEF - SESSION REPORT\r\n";
     csvContent += `Total Hazards,${hazards.length}\r\n`;
-    csvContent += `Total Volume Displaced (m3),${totalVolume.toFixed(3)}\r\n`;
+    csvContent += `Total Area Affected (m2),${totalArea.toFixed(2)}\r\n`;
     csvContent += `Session Risk Level,${riskLevel}\r\n\r\n`;
     
-    csvContent += "ID,Type,Latitude,Longitude,Volume (m3),Confidence (%),Severity\r\n";
+    csvContent += "ID,Type,Latitude,Longitude,Area (m2),Confidence (%),Severity\r\n";
     
     hazards.forEach((h, i) => {
-      const vol = Number(h.estimated_volume_m3 || h.surface_area_m2) || 0;
-      const sev = (h.severity || severityFromArea(vol)).toUpperCase();
+      const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : null;
+      const sev = h.severity ? h.severity.toUpperCase() : '—';
       const loc = h.location || {};
       const lat = loc.latitude ?? h.latitude ?? 0;
       const lon = loc.longitude ?? h.longitude ?? 0;
       const formattedType = (h.class_name || h.type || 'unknown').replace('_', ' ').toUpperCase();
-      const conf = (((h.confidence ?? 0.95) * 100)).toFixed(1);
+      const conf = h.confidence != null ? (h.confidence * 100).toFixed(1) : '—';
       const id = h.hazard_id || `HAZ-${i}`;
       
-      csvContent += `${id},${formattedType},${lat.toFixed(6)},${lon.toFixed(6)},${vol.toFixed(3)},${conf},${sev}\r\n`;
+      csvContent += `${id},${formattedType},${lat.toFixed(6)},${lon.toFixed(6)},${area != null ? area.toFixed(2) : '—'},${conf},${sev}\r\n`;
     });
     
     const encodedUri = encodeURI(csvContent);
@@ -161,6 +159,11 @@ const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
+  };
+
+  const downloadSessionBundle = () => {
+    if (!currentState?.session_id) return alert("No active session to download.");
+    window.open(`/api/sessions/${currentState.session_id}/download`, '_blank');
   };
 
   return (
@@ -199,6 +202,29 @@ const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
             </svg>
             Export Municipal Brief
           </button>
+          <button
+            onClick={downloadSessionBundle}
+            style={{
+              background: 'transparent',
+              color: '#3b82f6',
+              border: '1px solid #3b82f6',
+              padding: '6px 14px',
+              borderRadius: '4px',
+              fontSize: '0.75rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Download Session Bundle
+          </button>
           <div style={{ 
             fontSize: '0.7rem', 
             fontFamily: 'var(--font-mono)', 
@@ -213,11 +239,27 @@ const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
         </div>
       </div>
 
+      {/* Session Replay Player */}
+      {!streamRunning && currentState?.session_id && (
+        <div className="card" style={{ marginTop: '4px', marginBottom: '10px' }}>
+          <div className="card-header"><span className="card-title">Session Replay</span></div>
+          <div className="card-body" style={{ display: 'flex', justifyContent: 'center', background: '#000', padding: 0, borderRadius: '0 0 6px 6px', overflow: 'hidden' }}>
+            <video 
+              controls 
+              src={`/api/sessions/${currentState.session_id}/annotated.mp4`}
+              style={{ width: '100%', maxHeight: '400px', objectFit: 'contain' }}
+            >
+              Your browser does not support the video tag.
+            </video>
+          </div>
+        </div>
+      )}
+
       {/* KPI Row */}
       <div className="kpi-grid">
         {[
           { label: 'Total Recorded Hazards', value: hazards.length },
-          { label: 'Cumulative Volume', value: `${totalVolume.toFixed(2)} m³` },
+          { label: 'Cumulative Area', value: `${totalArea.toFixed(1)} m²` },
           { label: 'Session Risk Level', value: riskLevel, color: sevColors[riskLevel] },
           { label: 'Active Alerts', value: summary.alert_count || hazards.length },
         ].map(({ label, value, color }) => (
@@ -297,14 +339,14 @@ const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
           </div>
           <div className="table-wrap" style={{ maxHeight: 380 }}>
             <table className="data-table">
-              <thead><tr><th>ID</th><th>Type</th><th>Location</th><th>Volume m³</th><th>Conf.</th><th>Severity</th></tr></thead>
+              <thead><tr><th>ID</th><th>Type</th><th>Location</th><th>Area m²</th><th>Conf.</th><th>Severity</th></tr></thead>
               <tbody>
                 {hazards.length === 0 ? (
                   <tr><td colSpan="6" style={{ textAlign: 'center', color: '#666', padding: '20px' }}>No session data recorded yet. Upload video to begin tracking.</td></tr>
                 ) : (
                   [...hazards].map((h, i) => {
-                    const vol = Number(h.estimated_volume_m3 || h.surface_area_m2) || 0;
-                    const sev = (h.severity || severityFromArea(vol)).toLowerCase();
+                    const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : null;
+                    const sev = h.severity ? h.severity.toLowerCase() : '—';
                     const loc = h.location || {};
                     const lat = loc.latitude ?? h.latitude;
                     const lon = loc.longitude ?? h.longitude;
@@ -317,9 +359,9 @@ const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.65rem', color: '#666' }}>
                           {typeof lat === 'number' ? lat.toFixed(4) : '—'}, {typeof lon === 'number' ? lon.toFixed(4) : '—'}
                         </td>
-                        <td>{vol.toFixed(3)}</td>
-                        <td>{(((h.confidence ?? 0.95) * 100)).toFixed(1)}%</td>
-                        <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
+                        <td>{area != null ? area.toFixed(2) : '—'}</td>
+                        <td>{h.confidence != null ? (h.confidence * 100).toFixed(1) + '%' : '—'}</td>
+                        <td><span className={sev !== '—' ? `sev-badge ${sev}` : 'type-badge'}>{sev !== '—' ? sev.toUpperCase() : '—'}</span></td>
                       </tr>
                     );
                   })
