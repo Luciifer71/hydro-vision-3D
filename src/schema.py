@@ -28,12 +28,11 @@ SCHEMA_VERSION = "1.0.0"
 # ---------------------------------------------------------------------------
 
 CLASS_NAMES: dict[int, str] = {
-    0: "cracks",
-    1: "damaged_footpath",
+    0: "potholes",
+    1: "waterlogging_area",
     2: "drainage_overflow",
     3: "open_manhole",
-    4: "potholes",
-    5: "waterlogging_area",
+    4: "damaged_footpath",
 }
 
 CLASS_IDS: dict[str, int] = {v: k for k, v in CLASS_NAMES.items()}

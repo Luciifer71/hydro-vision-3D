@@ -2,6 +2,12 @@
 # HYDRO-VISION-3D — Git Ignore
 # ============================================================
 
+outputs/
+test_frames/
+annotation_frames/
+frontend/dist/
+.env
+
 # Python
 __pycache__/
 *.py[cod]

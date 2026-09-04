@@ -1,0 +1,13 @@
+train: ../train/images
+val: ../valid/images
+test: ../test/images
+
+nc: 5
+names: ['damaged_footpath', 'drainage_overflow', 'open_manhole', 'potholes', 'waterlogging_area']
+
+roboflow:
+  workspace: krishay-shah
+  project: hydro-vision-merged-yrreb
+  version: 3
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/krishay-shah/hydro-vision-merged-yrreb/dataset/3
