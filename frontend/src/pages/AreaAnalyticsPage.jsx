@@ -3,6 +3,7 @@ import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { useStore, CONFIG } from '../store.js';
 import EmptySessionState from '../components/EmptySessionState.jsx';
+import ErrorBoundary from '../components/ErrorBoundary.jsx';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -11,8 +12,6 @@ ChartJS.defaults.animation.duration = 0;
 
 export default function AreaAnalyticsPage() {
   const { hazards = [], currentState } = useStore();
-
-  if (!currentState) return <EmptySessionState message="No Spatial Area Data Available" />;
 
   const metrics = useMemo(() => {
     let totalArea = 0;
@@ -23,7 +22,7 @@ export default function AreaAnalyticsPage() {
     hazards.forEach(h => {
       const cls = h.class_name || h.type || 'unknown';
       const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : null;
-      
+
       if (area != null) {
         totalArea += area;
         if (area > maxArea) maxArea = area;
@@ -44,6 +43,8 @@ export default function AreaAnalyticsPage() {
 
     return { totalArea, maxArea, avgArea, classStats };
   }, [hazards]);
+
+  if (!currentState) return <EmptySessionState message="No Spatial Area Data Available" />;
 
   const classKeys = Object.keys(metrics.classStats);
   const barData = {
@@ -106,7 +107,9 @@ export default function AreaAnalyticsPage() {
         </div>
         <div className="card-body">
           <div className="chart-wrap" style={{ height: 220 }}>
-            <Bar data={barData} options={chartOptions} />
+            <ErrorBoundary name="Area Distribution Chart">
+              <Bar data={barData} options={chartOptions} />
+            </ErrorBoundary>
           </div>
         </div>
       </div>

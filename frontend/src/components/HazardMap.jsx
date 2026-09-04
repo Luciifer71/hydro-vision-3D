@@ -3,6 +3,7 @@ import { useStore, CONFIG } from '../store.js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import HazardModal from './HazardModal';
+import ErrorBoundary from './ErrorBoundary.jsx';
 
 // Fix default Leaflet icon path issues
 delete L.Icon.Default.prototype._getIconUrl;
@@ -425,7 +426,9 @@ export default function HazardMap({ fullpage = false }) {
 
       {/* Hazard Modal */}
       {selectedHazard && (
-        <HazardModal hazard={selectedHazard} onClose={() => setSelectedHazard(null)} />
+        <ErrorBoundary name="Hazard Modal">
+          <HazardModal hazard={selectedHazard} onClose={() => setSelectedHazard(null)} />
+        </ErrorBoundary>
       )}
     </div>
   );

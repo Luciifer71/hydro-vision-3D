@@ -12,6 +12,8 @@ const NAV = [
   { id: 'depth', label: 'Depth Analysis' },
   { section: 'Navigation' },
   { id: 'map', label: 'GPS / Map' },
+  { section: 'Municipal' },
+  { id: 'municipal', label: 'Civic Command' },
 ];
 
 export default function Sidebar() {

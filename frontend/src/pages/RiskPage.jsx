@@ -4,6 +4,7 @@ import { Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement
 import { useStore } from '../store.js';
 import { computeSessionRisk } from '../lib/derive.js';
 import EmptySessionState from '../components/EmptySessionState.jsx';
+import ErrorBoundary from '../components/ErrorBoundary.jsx';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, Title, Tooltip, Legend, Filler);
 
@@ -76,7 +77,9 @@ export default function RiskPage() {
           <div className="card-header"><span className="card-title">Risk Distribution Over Time</span></div>
           <div className="card-body">
             <div className="chart-wrap" style={{ height: 220 }}>
-              <Line data={riskData} options={{ scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 6, font: { size: 10 } } }, y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.04)' } } }, plugins: { legend: { display: false } }, interaction: { intersect: false, mode: 'index' }, responsive: true, maintainAspectRatio: false }} />
+              <ErrorBoundary name="Risk Trend Line Chart">
+                <Line data={riskData} options={{ scales: { x: { grid: { display: false }, ticks: { maxTicksLimit: 6, font: { size: 10 } } }, y: { beginAtZero: true, max: 100, grid: { color: 'rgba(255,255,255,0.04)' } } }, plugins: { legend: { display: false } }, interaction: { intersect: false, mode: 'index' }, responsive: true, maintainAspectRatio: false }} />
+              </ErrorBoundary>
             </div>
           </div>
         </div>
@@ -84,7 +87,9 @@ export default function RiskPage() {
           <div className="card-header"><span className="card-title">Current Risk Breakdown</span></div>
           <div className="card-body">
             <div className="chart-wrap" style={{ height: 220 }}>
-              <Pie data={pieData} options={{ plugins: { legend: { display: true, position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 }, padding: 8 } } }, responsive: true, maintainAspectRatio: false }} />
+              <ErrorBoundary name="Risk Pie Chart">
+                <Pie data={pieData} options={{ plugins: { legend: { display: true, position: 'bottom', labels: { color: '#94a3b8', font: { size: 11 }, padding: 8 } } }, responsive: true, maintainAspectRatio: false }} />
+              </ErrorBoundary>
             </div>
           </div>
         </div>

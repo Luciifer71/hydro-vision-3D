@@ -2,12 +2,11 @@ import React, { useState, useEffect } from 'react';
 import HazardMap from '../components/HazardMap.jsx';
 import { useStore } from '../store.js';
 import EmptySessionState from '../components/EmptySessionState.jsx';
+import ErrorBoundary from '../components/ErrorBoundary.jsx';
 
 export default function MapPage() {
   const { hazards = [], currentState } = useStore();
   const [currentTime, setCurrentTime] = useState('');
-
-  if (!currentState) return <EmptySessionState message="No Map Data Loaded" />;
 
   // Live ticking clock for tracking telemetry updates
   useEffect(() => {
@@ -17,6 +16,8 @@ export default function MapPage() {
     }, 1000);
     return () => clearInterval(timer);
   }, []);
+
+  if (!currentState) return <EmptySessionState message="No Map Data Loaded" />;
 
   const totalArea = hazards.reduce((s, h) => s + (Number(h.surface_area_m2) || 0), 0);
 
@@ -43,7 +44,9 @@ export default function MapPage() {
           <span className="card-badge badge-live" style={{ color: '#10b981', fontSize: '0.7rem' }}>● Live Streaming</span>
         </div>
         <div style={{ flex: 1, position: 'relative', minHeight: 300, width: '100%' }}>
-          <HazardMap fullpage />
+          <ErrorBoundary name="Interactive GIS Map">
+            <HazardMap fullpage />
+          </ErrorBoundary>
         </div>
       </div>
 
