@@ -134,6 +134,7 @@ export const useStore = create((set, get) => ({
     speed: 0, battery: 87, rssi: -62,
     flightTime: 0, satellites: 12, heading: 245, verticalSpeed: 0, pitch: 2, roll: -1,
   },
+  trajectory: [],
 
   viewMode: 'fly',
   feedMode: 'live',
@@ -354,6 +355,7 @@ export const useStore = create((set, get) => ({
           rssi: -58 - Math.floor(Math.sin(time) * 10),
           satellites: 12 + Math.floor(Math.sin(time / 5) * 2),
         },
+        trajectory: [...(state.trajectory || []), [lat, lon]].slice(-1000),
       };
     });
   },
@@ -536,7 +538,7 @@ export const useStore = create((set, get) => ({
 
   resetStream: async () => {
     await get().stopStream();
-    set({ hazards: [], currentState: null, previousState: null, timelineHistory: [], riskHistory: [] });
+    set({ hazards: [], currentState: null, previousState: null, timelineHistory: [], riskHistory: [], trajectory: [] });
     get().addLog('Stream reset');
   },
 
@@ -553,6 +555,20 @@ export const useStore = create((set, get) => ({
         hazards: state.hazards.map(h => h.hazard_id === hazardId ? { ...h, status } : h)
       }));
     } catch { addLog('Status update failed'); }
+  },
+
+  sendThreshold: (value) => {
+    const { wsRef, addLog } = get();
+    if (wsRef && wsRef.readyState === WebSocket.OPEN) {
+      try {
+        wsRef.send(JSON.stringify({ type: 'CONFIDENCE_THRESHOLD', value }));
+        addLog(`AI Confidence Threshold set to ${value.toFixed(2)}`);
+      } catch (e) {
+        console.warn('Failed to send slider value via WS', e);
+      }
+    } else {
+      addLog('Cannot set threshold: Not connected to Live Stream');
+    }
   },
 
   saveSettings: (s) => {

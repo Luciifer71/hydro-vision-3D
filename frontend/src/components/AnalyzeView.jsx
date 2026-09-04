@@ -132,6 +132,37 @@ const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
 
   const sevColors = { LOW: '#10b981', MODERATE: '#ffbb00', HIGH: '#ff8800', CRITICAL: '#cc0000' };
 
+  const exportToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "MUNICIPAL BRIEF - SESSION REPORT\r\n";
+    csvContent += `Total Hazards,${hazards.length}\r\n`;
+    csvContent += `Total Volume Displaced (m3),${totalVolume.toFixed(3)}\r\n`;
+    csvContent += `Session Risk Level,${riskLevel}\r\n\r\n`;
+    
+    csvContent += "ID,Type,Latitude,Longitude,Volume (m3),Confidence (%),Severity\r\n";
+    
+    hazards.forEach((h, i) => {
+      const vol = Number(h.estimated_volume_m3 || h.surface_area_m2) || 0;
+      const sev = (h.severity || severityFromArea(vol)).toUpperCase();
+      const loc = h.location || {};
+      const lat = loc.latitude ?? h.latitude ?? 0;
+      const lon = loc.longitude ?? h.longitude ?? 0;
+      const formattedType = (h.class_name || h.type || 'unknown').replace('_', ' ').toUpperCase();
+      const conf = (((h.confidence ?? 0.95) * 100)).toFixed(1);
+      const id = h.hazard_id || `HAZ-${i}`;
+      
+      csvContent += `${id},${formattedType},${lat.toFixed(6)},${lon.toFixed(6)},${vol.toFixed(3)},${conf},${sev}\r\n`;
+    });
+    
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `municipal_brief_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
       {/* Session Summary Banner */}
@@ -144,16 +175,41 @@ const typeKeys = Object.keys(CONFIG.TYPE_LABELS || {});
             {streamRunning ? '● Active AI pipeline analyzing drone footage...' : '✔ Video analysis finished. All spatial markers, volumes, and severity logs locked below.'}
           </div>
         </div>
-        <div style={{ 
-          fontSize: '0.7rem', 
-          fontFamily: 'var(--font-mono)', 
-          background: streamRunning ? 'rgba(16,185,129,0.15)' : 'rgba(255,187,0,0.15)', 
-          color: streamRunning ? '#10b981' : '#ffbb00', 
-          padding: '3px 10px', 
-          borderRadius: 4, 
-          border: streamRunning ? '1px solid #10b981' : '1px solid #ffbb00' 
-        }}>
-          {streamRunning ? 'RECORDING' : 'REPORT READY'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <button
+            onClick={exportToCSV}
+            style={{
+              background: 'linear-gradient(135deg, #10b981, #059669)',
+              color: '#1a1a1a',
+              border: 'none',
+              padding: '6px 14px',
+              borderRadius: '4px',
+              fontSize: '0.75rem',
+              fontWeight: 800,
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '6px',
+            }}
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            Export Municipal Brief
+          </button>
+          <div style={{ 
+            fontSize: '0.7rem', 
+            fontFamily: 'var(--font-mono)', 
+            background: streamRunning ? 'rgba(16,185,129,0.15)' : 'rgba(255,187,0,0.15)', 
+            color: streamRunning ? '#10b981' : '#ffbb00', 
+            padding: '3px 10px', 
+            borderRadius: 4, 
+            border: streamRunning ? '1px solid #10b981' : '1px solid #ffbb00' 
+          }}>
+            {streamRunning ? 'RECORDING' : 'REPORT READY'}
+          </div>
         </div>
       </div>
 

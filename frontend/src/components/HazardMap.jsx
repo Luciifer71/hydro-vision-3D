@@ -42,10 +42,11 @@ export default function HazardMap({ fullpage = false }) {
   const tileLayerRef = useRef(null);
   const markersRef = useRef(new Map());
   const droneMarkerRef = useRef(null);
+  const trajectoryRef = useRef(null);
 
   const [activeLayer, setActiveLayer] = useState('google-hybrid');
   const [selectedHazard, setSelectedHazard] = useState(null);
-  const { hazards = [], telemetry = {}, currentPage } = useStore();
+  const { hazards = [], telemetry = {}, trajectory = [], currentPage } = useStore();
 
   // Helper to extract coordinates safely from various backend payload structures
   const extractCoords = (h) => {
@@ -223,6 +224,24 @@ export default function HazardMap({ fullpage = false }) {
       `);
     }
   }, [telemetry.latitude, telemetry.longitude, telemetry.heading, telemetry.altitude, telemetry.speed]);
+
+  // Live Drone Flight Trajectory
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !trajectory || trajectory.length === 0) return;
+
+    if (!trajectoryRef.current) {
+      trajectoryRef.current = L.polyline(trajectory, {
+        color: '#10b981',
+        weight: 3,
+        opacity: 0.7,
+        dashArray: '5, 8',
+        lineJoin: 'round',
+      }).addTo(map);
+    } else {
+      trajectoryRef.current.setLatLngs(trajectory);
+    }
+  }, [trajectory]);
 
   // Recenter / Fit All Hazards
   const handleRecenter = () => {

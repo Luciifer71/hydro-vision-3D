@@ -6,6 +6,7 @@ import AttitudeCard from './AttitudeCard.jsx';
 import HazardFeed from './HazardFeed.jsx';
 import MissionStatusPanel from './MissionStatusPanel.jsx';
 import ErrorBoundary from './ErrorBoundary.jsx';
+import ConfidenceSlider from './ConfidenceSlider.jsx';
 import { useLiveHazards } from '../hooks/useLiveHazards';
 
 export default function FlyView() {
@@ -97,6 +98,10 @@ export default function FlyView() {
             totalArea={totalArea}
             currentState={currentState}
           />
+        </ErrorBoundary>
+
+        <ErrorBoundary name="Confidence Slider">
+          <ConfidenceSlider />
         </ErrorBoundary>
       </div>
     </div>
