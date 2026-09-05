@@ -65,7 +65,7 @@ CLASS_CONF = {
     "open_manhole":      0.35,
     "drainage_overflow": 0.30,
     "potholes":          0.25,
-    "damaged_footpath":  0.10,
+    "damaged_footpath":  0.99,   # class not trained — effectively disabled
     "waterlogging_area": 0.08,
 }
 CONF_THRESHOLD = 0.05          # model runs wide open; CLASS_CONF does the filtering
@@ -101,6 +101,9 @@ CAMERA_HFOV_DEG = 84.0
 CAMERA_PITCH_DEG = -90.0       # nadir. Change if K-05 shows the camera is angled.
 
 OUTPUT_ROOT = Path("outputs/sessions")
+LATEST_VIDEO = Path("outputs/latest_annotated.mp4")   # replaced every run
+LATEST_HAZARDS = Path("outputs/latest_hazards.json")
+KEEP_SESSIONS = 3      # older session folders are pruned automatically
 DEFAULT_VIDEO_PATH = "data/raw_videos/master_video.mp4"
 
 SEVERITY_BANDS = [
@@ -599,6 +602,53 @@ def _wrap(jpeg: bytes) -> bytes:
     return b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + jpeg + b"\r\n"
 
 
+def _publish_latest(out_dir: Optional[Path]) -> None:
+    """Copy this session's outputs to a fixed 'latest' path.
+
+    The per-session bundle is the permanent record; this is the convenience
+    copy you open for evaluation without hunting for a session ID. It is
+    replaced on every run.
+    """
+    if not out_dir:
+        return
+    try:
+        LATEST_VIDEO.parent.mkdir(parents=True, exist_ok=True)
+
+        src_video = out_dir / "annotated.mp4"
+        if src_video.exists():
+            if LATEST_VIDEO.exists():
+                LATEST_VIDEO.unlink()
+            shutil.copy2(src_video, LATEST_VIDEO)
+            size_mb = LATEST_VIDEO.stat().st_size / (1024 * 1024)
+            print(f"[ARTIFACT] Latest annotated video -> {LATEST_VIDEO} ({size_mb:.1f} MB)")
+
+        src_json = out_dir / "hazards.json"
+        if src_json.exists():
+            if LATEST_HAZARDS.exists():
+                LATEST_HAZARDS.unlink()
+            shutil.copy2(src_json, LATEST_HAZARDS)
+    except Exception as e:
+        print(f"[ARTIFACT WARNING] Could not publish latest: {e}")
+
+
+def _prune_old_sessions(keep: int = KEEP_SESSIONS) -> None:
+    """Keep only the N most recent session folders. Annotated video is large
+    and this fills a disk quickly otherwise."""
+    try:
+        if not OUTPUT_ROOT.exists():
+            return
+        dirs = sorted(
+            [d for d in OUTPUT_ROOT.iterdir() if d.is_dir()],
+            key=lambda d: d.stat().st_mtime,
+            reverse=True,
+        )
+        for old in dirs[keep:]:
+            shutil.rmtree(old, ignore_errors=True)
+            print(f"[CLEANUP] Removed old session: {old.name}")
+    except Exception as e:
+        print(f"[CLEANUP WARNING] {e}")
+
+
 def _transcode_h264(out_dir: Optional[Path]) -> None:
     """mp4v doesn't play in browsers. Transcode if ffmpeg exists; keep the
     raw file either way so the record is never lost."""
@@ -606,14 +656,18 @@ def _transcode_h264(out_dir: Optional[Path]) -> None:
         return
     raw = out_dir / "annotated_raw.mp4"
     final = out_dir / "annotated.mp4"
+
     if not raw.exists():
+        if final.exists():
+            _publish_latest(out_dir)
         return
+
     try:
         subprocess.run(
             ["ffmpeg", "-y", "-i", str(raw), "-c:v", "libx264",
              "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p",
              str(final)],
-            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=900)
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1800)
         raw.unlink(missing_ok=True)
         print(f"[ARTIFACT] Annotated video -> {final}")
     except FileNotFoundError:
@@ -623,7 +677,8 @@ def _transcode_h264(out_dir: Optional[Path]) -> None:
         shutil.move(str(raw), str(final))
         print(f"[ARTIFACT] Transcode failed ({e}); kept raw file.")
 
-
+    _publish_latest(out_dir)
+    
 def generate_mjpeg_stream():
     """Synchronous generator: FastAPI runs it in a thread, so the event loop
     stays responsive for WebSockets and REST."""
@@ -975,6 +1030,14 @@ def stop_stream():
     SESSION.write_artifacts()
     return {"status": "success", "message": "Pipeline stopped; artifacts written"}
 
+
+@app.get("/api/latest-video")
+def get_latest_video():
+    """The most recent annotated video, replaced on every run."""
+    if not LATEST_VIDEO.exists():
+        return {"error": "no annotated video yet — run the pipeline first"}
+    return FileResponse(str(LATEST_VIDEO), media_type="video/mp4",
+                        filename="latest_annotated.mp4")
 
 @app.get("/api/hazards")
 def get_hazards():

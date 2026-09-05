@@ -1,6 +1,6 @@
-train: ../train/images
-val: ../valid/images
-test: ../test/images
+train: train/images
+val: valid/images
+test: test/images
 
 nc: 5
 names: ['damaged_footpath', 'drainage_overflow', 'open_manhole', 'potholes', 'waterlogging_area']

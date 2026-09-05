@@ -79,6 +79,9 @@ GPU: NVIDIA GeForce RTX 5070
 The dataset is intentionally not stored in GitHub because of its size.
 
 **[INSERT DATASET TRANSFER METHOD HERE — e.g., Download the dataset from the provided Google Drive link / Copy it from the external SSD provided]**
+//
+
+https://drive.google.com/drive/u/0/folders/1LFl5HuBjrPT-tuYfSJEHGtQiHXOpC3bZ
 
 The final YOLO-ready dataset must be placed exactly at:
 
@@ -151,9 +154,9 @@ The current training configuration is designed for the final YOLOv8s baseline:
 | :--- | :--- |
 | **Model** | YOLOv8s |
 | **Image size** | 640 |
-| **Maximum epochs** | 150 |
+| **Maximum epochs** | 175 |
 | **Early stopping patience**| 40 |
-| **Batch size** | 8 |
+| **Batch size** | 16 |
 | **Seed** | 42 |
 | **AMP** | Enabled |
 | **Validation** | Enabled |
