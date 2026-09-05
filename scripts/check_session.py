@@ -2,7 +2,11 @@ import json, collections
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-latest = max((ROOT / "outputs/sessions").iterdir(), key=lambda p: p.stat().st_mtime)
+sessions = sorted(
+    [d for d in (ROOT / "outputs/sessions").iterdir() if (d / "hazards.json").exists()],    key=lambda p: p.stat().st_mtime)
+if not sessions:
+    print("No completed session yet. Let the pipeline finish."); raise SystemExit(0)
+latest = sessions[-1]
 d = json.load(open(latest / "hazards.json"))
 
 print(f"Session: {latest.name}")

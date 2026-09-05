@@ -23,6 +23,8 @@ What changed from the previous version:
 
 import asyncio
 import json
+import re
+import uuid as _uuid
 import os
 import shutil
 import statistics
@@ -39,7 +41,6 @@ import torch
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from frontend.Backend_for_VideoDownload.video_recorder import recorder
 from PIL import Image
 from pydantic import BaseModel
 from ultralytics import YOLO
@@ -69,17 +70,27 @@ CLASS_CONF = {
     "damaged_footpath":  0.99,   # class not trained — effectively disabled
     "waterlogging_area": 0.08,
 }
+
 CONF_THRESHOLD = 0.05          # model runs wide open; CLASS_CONF does the filtering
 DEFAULT_CLASS_CONF = 0.20      # used if a class is missing from CLASS_CONF
 
 IMGSZ = 640                    # MUST match training resolution
-DETECT_EVERY_N = 2             # 1 = every frame (best tracking), higher = faster
+DETECT_EVERY_N = 1             #2 # 1 = every frame (best tracking), higher = faster
 DEPTH_EVERY_N = 15             # depth changes slowly; detection doesn't
 DEPTH_INPUT_WIDTH = 518        # Depth Anything's native size; 1080p input is wasted
-MIN_FRAMES_TO_CONFIRM = 3      # persistence gate (counted in PROCESSED frames)
+MIN_FRAMES_TO_CONFIRM = 8      #3 # persistence gate (counted in PROCESSED frames)
+MIN_DURATION_S = 1.5           # a real hazard is visible for at least ~1.5 seconds
+
 # Per-class area ceilings. A flooded street legitimately fills most of an
 # aerial frame; an open manhole never does. One global ratio was discarding
 # exactly the class with the worst recall.
+MAX_UPLOAD_MB = 500              # reject larger uploads outright
+MAX_DURATION_S = 600             # 10 min; longer videos are frame-skipped
+MAX_FRAMES_TO_PROCESS = 9000     # hard ceiling regardless of duration
+ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
+MAX_AREA_SAMPLES = 500           # cap per-track memory
+DOWNLOAD_NAME = "Hydro-Vision-3D_annotated.mp4"
+
 MAX_BOX_AREA_RATIO = {
     "waterlogging_area": 0.95,
     "drainage_overflow": 0.85,
@@ -248,7 +259,8 @@ class HazardRegistry:
             h["detections_count"] += 1
             h["last_frame"] = frame_id
             h["last_seen_s"] = round(t_s, 2)
-            h["area_px_samples"].append(area_px)
+            if len(h["area_px_samples"]) < MAX_AREA_SAMPLES:
+                h["area_px_samples"].append(area_px)
             if depth_index is not None:
                 h["depth_samples"].append(depth_index)
 
@@ -304,6 +316,12 @@ class HazardRegistry:
 
         out = []
         for h in tracks:
+                        # Frame counts scale with detection rate; duration doesn't.
+            # A genuine hazard stays in view for over a second; a false
+            # positive flickers for a few frames.
+            duration = h["last_seen_s"] - h["first_seen_s"]
+            if duration < MIN_DURATION_S:
+                continue
             if h["detections_count"] < MIN_FRAMES_TO_CONFIRM:
                 continue
             if not h["area_px_samples"]:
@@ -406,6 +424,7 @@ class SessionState:
         self.finished: bool = False
         self.frame_count: int = 0
         self.total_frames: int = 0
+        self.frame_stride: int = 1
         self.fps: float = 30.0
         self.width: int = 0
         self.height: int = 0
@@ -739,6 +758,15 @@ def generate_mjpeg_stream():
                 SESSION.streaming = True
                 t_start = time.time()
 
+                # Long videos: sample frames so a 1-hour upload doesn't take
+                # 3 hours. The annotated output still covers the whole video,
+                # just at a lower effective frame rate.
+                SESSION.frame_stride = max(
+                    1, int(np.ceil(SESSION.total_frames / MAX_FRAMES_TO_PROCESS)))
+                if SESSION.frame_stride > 1:
+                    print(f"[PIPELINE] Long video ({SESSION.total_frames} frames): "
+                          f"processing every {SESSION.frame_stride}th frame")
+
                 # Depth cache must not carry over between videos.
                 last_depth_colormap = None
                 last_depth_array = None
@@ -758,12 +786,15 @@ def generate_mjpeg_stream():
                     pass
 
                 # Mission record writer — same pass, no second decode.
+                # Output fps is divided by the stride so the saved video plays
+                # at real-time speed rather than fast-forward.
                 if SESSION.out_dir:
                     try:
+                        out_fps = max(1.0, SESSION.fps / max(1, SESSION.frame_stride))
                         writer = cv2.VideoWriter(
                             str(SESSION.out_dir / "annotated_raw.mp4"),
                             cv2.VideoWriter_fourcc(*"mp4v"),
-                            SESSION.fps,
+                            out_fps,
                             (SESSION.width, SESSION.height),
                         )
                         if not writer.isOpened():
@@ -792,11 +823,26 @@ def generate_mjpeg_stream():
                 SESSION.streaming = False
                 continue  # -> standby, generator stays alive for the client
 
+            # Skip frames on long videos. Counted but not processed, so the
+            # progress percentage still reflects real position in the file.
+            if SESSION.frame_stride > 1 and (SESSION.frame_count % SESSION.frame_stride) != 0:
+                SESSION.frame_count += 1
+                continue
+
             SESSION.frame_count += 1
             fid = SESSION.frame_count
             t_s = fid / SESSION.fps if SESSION.fps else 0.0
             annotated = frame.copy()
             fh, fw = frame.shape[:2]
+
+            # A frame whose size differs from what the writer was opened with
+            # is silently discarded by OpenCV. Catch it rather than producing
+            # an empty video file.
+            if writer is not None and (fw != SESSION.width or fh != SESSION.height):
+                print(f"[ARTIFACT WARNING] Frame size {fw}x{fh} != writer "
+                      f"{SESSION.width}x{SESSION.height}; recording disabled.")
+                SESSION.stage_status["artifact"] = "failed: frame size mismatch"
+                writer.release(); writer = None
 
             # ---------------- DEPTH (slow cadence, own budget) ----------------
             # Depth Anything V2 was ~95% of frame time at full resolution.
@@ -947,9 +993,6 @@ def generate_mjpeg_stream():
                     SESSION.stage_status["artifact"] = f"failed: {type(e).__name__}"
                     writer.release(); writer = None
 
-            # ---------------- STANDALONE RECORDER ----------------
-            recorder.write_frame(annotated)
-
             elapsed = max(1e-6, time.time() - t_start)
             SESSION.achieved_fps = SESSION.frame_count / elapsed
 
@@ -989,7 +1032,6 @@ def generate_mjpeg_stream():
         SESSION.streaming = False
         SESSION.write_artifacts()
 
-
 # ===========================================================================
 # ROUTES
 # ===========================================================================
@@ -1003,26 +1045,103 @@ async def api_stream_video():
     )
 
 
+
+def _safe_name(filename: str) -> str:
+    """Never trust a client filename. Strip path components and unsafe chars."""
+    base = os.path.basename(filename or "upload")
+    base = re.sub(r"[^A-Za-z0-9._-]", "_", base)[:80]
+    stem, ext = os.path.splitext(base)
+    if ext.lower() not in ALLOWED_EXTENSIONS:
+        ext = ".mp4"
+    return f"{stem or 'video'}_{_uuid.uuid4().hex[:8]}{ext}"
+
+
 @app.post("/api/upload-video")
 async def upload_video(file: UploadFile = File(...)):
+    ext = os.path.splitext(file.filename or "")[1].lower()
+    if ext not in ALLOWED_EXTENSIONS:
+        return {"status": "error",
+                "message": f"Unsupported format '{ext}'. Allowed: "
+                           + ", ".join(sorted(ALLOWED_EXTENSIONS))}
+
     os.makedirs("data/raw_videos", exist_ok=True)
-    dest = f"data/raw_videos/{file.filename}"
-    with open(dest, "wb+") as f:
-        shutil.copyfileobj(file.file, f)
+    dest = os.path.join("data/raw_videos", _safe_name(file.filename))
+
+    # Stream to disk with a hard size cap so a huge upload can't fill the disk.
+    limit = MAX_UPLOAD_MB * 1024 * 1024
+    written = 0
+    try:
+        with open(dest, "wb") as out:
+            while True:
+                chunk = await file.read(1024 * 1024)
+                if not chunk:
+                    break
+                written += len(chunk)
+                if written > limit:
+                    out.close()
+                    os.remove(dest)
+                    return {"status": "error",
+                            "message": f"File exceeds {MAX_UPLOAD_MB} MB limit."}
+                out.write(chunk)
+    except Exception as e:
+        if os.path.exists(dest):
+            os.remove(dest)
+        return {"status": "error", "message": f"Upload failed: {e}"}
+
+    # Validate it actually decodes before accepting it.
+    probe = cv2.VideoCapture(dest)
+    if not probe.isOpened():
+        probe.release(); os.remove(dest)
+        return {"status": "error",
+                "message": "File could not be decoded. It may be corrupt or "
+                           "use an unsupported codec."}
+    w = int(probe.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    h = int(probe.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    fps = probe.get(cv2.CAP_PROP_FPS) or 30.0
+    nframes = int(probe.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    probe.release()
+
+    if w <= 0 or h <= 0:
+        os.remove(dest)
+        return {"status": "error", "message": "Video has no readable dimensions."}
+
+    duration = nframes / fps if fps else 0
 
     SESSION.active = False
-    time.sleep(0.4)                       # let the running pass wind down
+    time.sleep(0.4)
+    _cleanup_old_uploads()
     sid = SESSION.new_session(dest)
     SESSION.active = True
-    return {"status": "success", "session_id": sid, "path": dest,
-            "message": f"{file.filename} loaded; pipeline starting"}
+
+    return {
+        "status": "success", "session_id": sid, "path": dest,
+        "resolution": f"{w}x{h}", "fps": round(fps, 1),
+        "frames": nframes, "duration_s": round(duration, 1),
+        "size_mb": round(written / (1024 * 1024), 1),
+        "note": ("Long video — frames will be sampled to keep processing "
+                 "within time limits." if duration > MAX_DURATION_S else None),
+    }
+
+
+def _cleanup_old_uploads(keep: int = 3) -> None:
+    """Uploads accumulate silently. Keep the most recent few."""
+    try:
+        p = Path("data/raw_videos")
+        vids = sorted([f for f in p.glob("*") if f.suffix.lower() in ALLOWED_EXTENSIONS],
+                      key=lambda f: f.stat().st_mtime, reverse=True)
+        for old in vids[keep:]:
+            old.unlink(missing_ok=True)
+            print(f"[CLEANUP] Removed old upload: {old.name}")
+    except Exception as e:
+        print(f"[CLEANUP WARNING] {e}")
 
 
 @app.get("/api/stream/start")
 @app.post("/api/stream/start")
 def start_stream():
-    if not SESSION.session_id:
-        SESSION.new_session(SESSION.video_path)
+    if SESSION.streaming:
+        return {"status": "already_running", "session_id": SESSION.session_id}
+    SESSION.new_session(SESSION.video_path)
     SESSION.active = True
     return {"status": "success", "session_id": SESSION.session_id}
 
@@ -1115,40 +1234,63 @@ def get_telemetry():
     return {"status": "active", "detections": SESSION.hazards()}
 
 
-# --------------------------- STANDALONE ON-DEMAND RECORDER ---------------------------
+# --------------------------- RECORDING ---------------------------
+# Recording is AUTOMATIC: the pipeline writes the annotated video during
+# its single pass over the frames, and publishes it to
+# outputs/latest_annotated.mp4 when the run completes.
+#
+# These endpoints are kept so the existing UI keeps working. Start/stop
+# are no-ops that report the automatic behaviour rather than 404ing.
 
 @app.get("/api/record/start")
+@app.post("/api/record/start")
 def start_on_demand_recording():
-    # Uses the current stream's resolution and FPS
-    fps = SESSION.fps if SESSION.fps and SESSION.fps > 0 else 30.0
-    w = SESSION.width if SESSION.width and SESSION.width > 0 else 1920
-    h = SESSION.height if SESSION.height and SESSION.height > 0 else 1080
-    return recorder.start_recording(fps=fps, width=w, height=h)
+    return {
+        "status": "started",
+        "automatic": True,
+        "message": "Recording is automatic — the annotated video is written "
+                   "while the pipeline runs.",
+        "session_id": SESSION.session_id,
+    }
+
 
 @app.get("/api/record/stop")
+@app.post("/api/record/stop")
 def stop_on_demand_recording():
-    return recorder.stop_recording()
+    ready = LATEST_VIDEO.exists()
+    return {
+        "status": "stopped",
+        "automatic": True,
+        "file_ready": ready,
+        "message": ("Annotated video ready for download."
+                    if ready else
+                    "No completed run yet — the video is written when "
+                    "processing finishes."),
+    }
+
+
+@app.get("/api/record/status")
+def recording_status():
+    """Lets the UI show whether a download is available."""
+    ready = LATEST_VIDEO.exists()
+    return {
+        "automatic": True,
+        "recording": SESSION.streaming,
+        "file_ready": ready,
+        "size_mb": (round(LATEST_VIDEO.stat().st_size / (1024 * 1024), 1)
+                    if ready else None),
+        "session_id": SESSION.session_id,
+    }
+
 
 @app.get("/api/record/download")
 def download_on_demand_recording():
-    if recorder.current_filepath and Path(recorder.current_filepath).exists():
-        return FileResponse(recorder.current_filepath, media_type="video/mp4", filename=recorder.current_filename)
-    return {"error": "No recent recording found"}
-
-
-@app.get("/health")
-def health_check():
-    return {
-        "status": "online",
-        "device": DEVICE,
-        "weights": MODEL_PATH,
-        "classes": yolo_model.names,
-        "class_conf": CLASS_CONF,
-        "depth_available": DEPTH_AVAILABLE,
-        "session": SESSION.session_id,
-        "streaming": SESSION.streaming,
-    }
-
+    """Serves the most recent annotated video. Replaced on every run."""
+    if not LATEST_VIDEO.exists():
+        return {"error": "No annotated video yet. Upload a video and let "
+                         "the pipeline finish."}
+    name = f"hydrovision_{SESSION.session_id or 'latest'}.mp4"
+    return FileResponse(str(LATEST_VIDEO), media_type="video/mp4", filename=name)
 
 # --------------------------- WebSockets ---------------------------
 # Both endpoints send the SAME shape. The old ones sent different
