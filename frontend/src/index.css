@@ -462,16 +462,59 @@ body {
   flex-direction: column;
   gap: 14px;
   height: 100%;
-  animation: pageEnter 0.24s var(--ease-spring) forwards;
 }
 
 .page.active {
   display: flex;
+  animation: pageEnter 0.32s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 @keyframes pageEnter {
-  from { opacity: 0; transform: translateY(6px); }
-  to { opacity: 1; transform: translateY(0); }
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.995);
+    filter: blur(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0px);
+  }
+}
+
+/* Staggered Child Element Entrance Animation */
+.page.active .bf-fieldset,
+.page.active .kpi-card,
+.page.active .card,
+.page.active .table-wrap {
+  animation: itemStagger 0.36s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.page.active > *:nth-child(1),
+.page.active .bf-fieldset:nth-child(1),
+.page.active .kpi-card:nth-child(1) { animation-delay: 0.03s; }
+
+.page.active > *:nth-child(2),
+.page.active .bf-fieldset:nth-child(2),
+.page.active .kpi-card:nth-child(2) { animation-delay: 0.07s; }
+
+.page.active > *:nth-child(3),
+.page.active .bf-fieldset:nth-child(3),
+.page.active .kpi-card:nth-child(3) { animation-delay: 0.11s; }
+
+.page.active > *:nth-child(4),
+.page.active .bf-fieldset:nth-child(4),
+.page.active .kpi-card:nth-child(4) { animation-delay: 0.15s; }
+
+@keyframes itemStagger {
+  0% {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* ==========================================================================
@@ -1214,6 +1257,33 @@ body {
   display: flex;
   gap: 8px;
   flex-wrap: wrap;
+}
+
+/* Tactile Active Button Press Feedback (Motion Primitives) */
+.btn:active,
+.bf-connect-btn:active,
+.view-btn:active,
+.nav-item:active,
+.form-select:active,
+button:active {
+  transform: scale(0.96) translateY(1px) !important;
+  transition: transform 0.08s cubic-bezier(0.4, 0, 0.2, 1) !important;
+  filter: brightness(0.92);
+}
+
+/* Interactive Card & Fieldset Hover Elevation */
+.bf-fieldset,
+.kpi-card,
+.card {
+  transition: border-color 0.22s ease, box-shadow 0.22s ease, transform 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.bf-fieldset:hover,
+.kpi-card:hover,
+.card:hover {
+  border-color: rgba(255, 184, 0, 0.25);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4), 0 0 16px rgba(255, 184, 0, 0.08);
+  transform: translateY(-2px);
 }
 
 /* ==========================================================================
