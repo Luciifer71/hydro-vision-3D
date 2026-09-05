@@ -29,7 +29,7 @@ RUNS_DIR = PROJECT_ROOT / "runs"
 
 MODEL_WEIGHTS = "yolov8m.pt"
 
-IMAGE_SIZE = 640
+IMAGE_SIZE = 1024
 
 MAX_EPOCHS = 150
 PATIENCE = 25
@@ -69,7 +69,7 @@ def get_device():
             print("[INFO] Apple MPS available")
             print("[INFO] Using Apple Silicon GPU")
 
-            return "mps", 12, 2, False
+            return "mps", 8, 4, False
 
     # 3. CPU fallback
     print("[WARNING] No CUDA or MPS acceleration detected.")
