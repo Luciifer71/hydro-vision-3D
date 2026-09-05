@@ -1,43 +1,25 @@
 from pathlib import Path
 import sys
 import torch
+import yaml
 from ultralytics import YOLO
 
 
 # ============================================================
 # HYDRO-VISION-3D
-# Canonical YOLO Training Script — 5-class taxonomy
+# Canonical YOLOv8m Training Script — 5-class detection
 # ============================================================
-#
-# Changed from the 6-class run:
-#   - dataset      : yolo_ready_dataset -> final_dataset_v2
-#   - classes      : 6 -> 5 (cracks removed)
-#   - run name     : yolov8s_baseline -> yolov8s_5class
-#   - exist_ok     : True -> False (never silently overwrite a finished run)
-#   - augmentation : heavy saturation/brightness jitter
-#
-# Why the augmentation change: the previous model scored mAP50 0.759 on
-# open_manhole in validation but 0.014 on a real manhole in our own footage.
-# That gap is domain shift — our training data is colour street-level
-# photography, our deployment footage includes greyscale CCTV, aerial news
-# video and compressed clips. High hsv_s forces the model to learn features
-# that do not depend on colour.
-# ============================================================
-
-
-# ------------------------------------------------------------
-# Paths
-# ------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent
 
-DATASET_YAML = (
+DATASET_DIR = (
     PROJECT_ROOT
     / "data"
-    / "final_dataset_v2"
-    / "data.yaml"
+    / "5th_sept_final_dataset_combined"
+    / "final_dataset"
 )
 
+DATASET_YAML = DATASET_DIR / "data.yaml"
 RUNS_DIR = PROJECT_ROOT / "runs"
 
 
@@ -45,17 +27,16 @@ RUNS_DIR = PROJECT_ROOT / "runs"
 # Training configuration
 # ------------------------------------------------------------
 
-MODEL_WEIGHTS = "yolov8s.pt"
+MODEL_WEIGHTS = "yolov8m.pt"
 
 IMAGE_SIZE = 640
-BATCH_SIZE = 16
 
 MAX_EPOCHS = 150
 PATIENCE = 25
 
 SEED = 42
 
-RUN_NAME = "yolov8s_5class"
+RUN_NAME = "yolov8m_final_dataset"
 
 EXPECTED_CLASSES = [
     "damaged_footpath",
@@ -71,23 +52,31 @@ EXPECTED_CLASSES = [
 # ============================================================
 
 def get_device():
-    """CUDA -> NVIDIA GPU, MPS -> Apple Silicon, else CPU."""
 
+    # 1. NVIDIA CUDA
     if torch.cuda.is_available():
         gpu_name = torch.cuda.get_device_name(0)
         vram = torch.cuda.get_device_properties(0).total_memory / (1024 ** 3)
-        print(f"[INFO] CUDA available")
-        print(f"[INFO] GPU: {gpu_name} ({vram:.1f} GB)")
-        return "cuda"
 
+        print("[INFO] CUDA available")
+        print(f"[INFO] GPU: {gpu_name} ({vram:.1f} GB)")
+
+        return "cuda", 8, 4, True
+
+    # 2. Apple Silicon MPS
     if hasattr(torch.backends, "mps"):
         if torch.backends.mps.is_available():
             print("[INFO] Apple MPS available")
-            return "mps"
+            print("[INFO] Using Apple Silicon GPU")
 
-    print("[WARNING] No GPU acceleration detected.")
-    print("[WARNING] Falling back to CPU. This will take many hours.")
-    return "cpu"
+            return "mps", 12, 2, False
+
+    # 3. CPU fallback
+    print("[WARNING] No CUDA or MPS acceleration detected.")
+    print("[WARNING] Falling back to CPU.")
+    print("[WARNING] Training will be significantly slower.")
+
+    return "cpu", 4, 2, False
 
 
 # ============================================================
@@ -95,68 +84,178 @@ def get_device():
 # ============================================================
 
 def validate_dataset():
-    """Fail before training, not four hours into it.
 
-    A silent class-order mismatch is the worst failure mode here: nothing
-    errors, and the model learns to call potholes 'drainage_overflow'.
-    """
+    if not DATASET_DIR.exists():
+        raise FileNotFoundError(
+            f"\nDataset directory not found:\n{DATASET_DIR}"
+        )
 
     if not DATASET_YAML.exists():
         raise FileNotFoundError(
-            f"\nDataset config not found:\n  {DATASET_YAML}\n\n"
-            f"Extract the Roboflow export to data/final_dataset_v2/"
+            f"\nDataset YAML not found:\n{DATASET_YAML}"
         )
-
-    try:
-        import yaml
-    except ImportError:
-        print("[WARNING] pyyaml not installed; skipping config validation.")
-        return
 
     cfg = yaml.safe_load(DATASET_YAML.read_text())
 
     names = cfg.get("names")
+
     if isinstance(names, dict):
         names = [names[k] for k in sorted(names)]
 
     nc = cfg.get("nc")
 
+    # ---- Class validation ----
+
     if nc != len(EXPECTED_CLASSES):
         raise ValueError(
-            f"\nnc mismatch: yaml says {nc}, expected {len(EXPECTED_CLASSES)}"
+            f"\nnc mismatch: YAML says {nc}, "
+            f"expected {len(EXPECTED_CLASSES)}"
         )
 
     if names != EXPECTED_CLASSES:
         raise ValueError(
-            f"\nClass names or order do not match.\n"
-            f"  expected: {EXPECTED_CLASSES}\n"
-            f"  found   : {names}\n\n"
-            f"Fix data.yaml before training. A mismatch here silently\n"
-            f"corrupts every prediction the model will ever make."
+            "\nClass names/order mismatch.\n"
+            f"Expected: {EXPECTED_CLASSES}\n"
+            f"Found:    {names}"
         )
 
-    # Roboflow writes '../train/images', which resolves outside the dataset
-    # folder and fails. Catch it here rather than as a confusing scan error.
-    for key in ("train", "val", "test"):
-        val = cfg.get(key)
-        if val and str(val).startswith(".."):
+    # ---- Path validation ----
+
+    yaml_path = str(cfg.get("path", "")).strip()
+
+    if yaml_path not in ("", "."):
+        print(f"[WARNING] data.yaml path = {yaml_path}")
+
+        if Path(yaml_path).is_absolute():
             raise ValueError(
-                f"\ndata.yaml '{key}' starts with '..' ({val}).\n"
-                f"Change it to '{str(val).lstrip('./')}' — paths resolve\n"
-                f"relative to the yaml file's own directory."
+                "\ndata.yaml contains an absolute machine-specific path:\n"
+                f"  {yaml_path}\n\n"
+                "Change it to:\n"
+                "  path: ."
             )
 
-    # Confirm the split folders actually exist and hold images.
-    base = DATASET_YAML.parent
-    for key in ("train", "val"):
-        p = base / cfg[key]
-        if not p.exists():
-            raise FileNotFoundError(f"\nSplit folder missing: {p}")
-        n = sum(1 for _ in p.glob("*.jpg")) + sum(1 for _ in p.glob("*.png"))
-        if n == 0:
-            raise ValueError(f"\nNo images found in {p}")
-        print(f"[OK] {key:5s}: {n} images")
+    # ---- Split validation ----
 
+    split_counts = {}
+
+    for split in ("train", "val", "test"):
+
+        split_value = cfg.get(split)
+
+        if not split_value:
+            raise ValueError(f"\nMissing '{split}' path in data.yaml")
+
+        image_dir = DATASET_DIR / split_value
+        label_dir = DATASET_DIR / split / "labels"
+
+        if not image_dir.exists():
+            raise FileNotFoundError(
+                f"\n{split} image directory missing:\n{image_dir}"
+            )
+
+        if not label_dir.exists():
+            raise FileNotFoundError(
+                f"\n{split} label directory missing:\n{label_dir}"
+            )
+
+        images = [
+            p for p in image_dir.iterdir()
+            if p.suffix.lower() in {
+                ".jpg", ".jpeg", ".png", ".bmp", ".webp"
+            }
+        ]
+
+        labels = list(label_dir.glob("*.txt"))
+
+        if not images:
+            raise ValueError(f"\nNo images found in {image_dir}")
+
+        if not labels:
+            raise ValueError(f"\nNo labels found in {label_dir}")
+
+        split_counts[split] = {
+            "images": len(images),
+            "labels": len(labels),
+        }
+
+        print(
+            f"[OK] {split:5s}: "
+            f"{len(images)} images, "
+            f"{len(labels)} label files"
+        )
+
+    # ---- Annotation validation ----
+
+    class_counts = {i: 0 for i in range(len(EXPECTED_CLASSES))}
+
+    total_boxes = 0
+
+    for split in ("train", "val", "test"):
+
+        label_dir = DATASET_DIR / split / "labels"
+
+        for label_file in label_dir.glob("*.txt"):
+
+            for line_number, line in enumerate(
+                label_file.read_text().splitlines(),
+                start=1
+            ):
+
+                line = line.strip()
+
+                if not line:
+                    continue
+
+                parts = line.split()
+
+                if len(parts) != 5:
+                    raise ValueError(
+                        f"\nInvalid detection annotation:\n"
+                        f"{label_file}:{line_number}\n"
+                        f"Expected 5 values, found {len(parts)}"
+                    )
+
+                try:
+                    class_id = int(parts[0])
+                    values = [float(v) for v in parts[1:]]
+                except ValueError:
+                    raise ValueError(
+                        f"\nNon-numeric annotation:\n"
+                        f"{label_file}:{line_number}"
+                    )
+
+                if not 0 <= class_id < len(EXPECTED_CLASSES):
+                    raise ValueError(
+                        f"\nInvalid class ID {class_id}:\n"
+                        f"{label_file}:{line_number}"
+                    )
+
+                if not all(0.0 <= v <= 1.0 for v in values):
+                    raise ValueError(
+                        f"\nCoordinates outside [0,1]:\n"
+                        f"{label_file}:{line_number}"
+                    )
+
+                if values[2] <= 0 or values[3] <= 0:
+                    raise ValueError(
+                        f"\nZero/negative box size:\n"
+                        f"{label_file}:{line_number}"
+                    )
+
+                class_counts[class_id] += 1
+                total_boxes += 1
+
+    print("\n[OK] Annotation format:")
+    print("     Detection boxes only")
+    print("     Polygons: 0")
+    print("     Mixed files: 0")
+
+    print("\n[INFO] Class distribution:")
+
+    for class_id, name in enumerate(EXPECTED_CLASSES):
+        print(f"       {name:22s}: {class_counts[class_id]}")
+
+    print(f"\n[OK] Total bounding boxes: {total_boxes}")
     print(f"[OK] {nc} classes, correct names and order.")
 
 
@@ -167,39 +266,37 @@ def validate_dataset():
 def main():
 
     print("=" * 70)
-    print("HYDRO-VISION-3D — YOLOv8s Training (5 classes)")
+    print("HYDRO-VISION-3D — YOLOv8m Training")
     print("=" * 70)
 
     validate_dataset()
 
-    print(f"\n[INFO] Dataset : {DATASET_YAML}")
-
-    device = get_device()
+    device, batch_size, workers, amp = get_device()
 
     print("\n[INFO] Training configuration")
-    print(f"       Model       : {MODEL_WEIGHTS}")
-    print(f"       Image size  : {IMAGE_SIZE}")
-    print(f"       Batch size  : {BATCH_SIZE}")
-    print(f"       Max epochs  : {MAX_EPOCHS}")
-    print(f"       Patience    : {PATIENCE}")
-    print(f"       Device      : {device}")
-    print(f"       Seed        : {SEED}")
-    print(f"       Run name    : {RUN_NAME}")
+    print(f"       Dataset      : {DATASET_DIR}")
+    print(f"       Model        : {MODEL_WEIGHTS}")
+    print(f"       Image size   : {IMAGE_SIZE}")
+    print(f"       Batch size   : {batch_size}")
+    print(f"       Max epochs   : {MAX_EPOCHS}")
+    print(f"       Patience     : {PATIENCE}")
+    print(f"       Device       : {device}")
+    print(f"       Workers      : {workers}")
+    print(f"       AMP          : {amp}")
+    print(f"       Seed         : {SEED}")
+    print(f"       Run name     : {RUN_NAME}")
 
     run_directory = RUNS_DIR / RUN_NAME
+
     if run_directory.exists():
-        print(f"\n[ERROR] Run directory already exists:\n  {run_directory}")
-        print("Rename RUN_NAME or move the old run. Refusing to overwrite")
-        print("weights that may be the only copy.")
+        print(
+            f"\n[ERROR] Run directory already exists:\n"
+            f"  {run_directory}"
+        )
+        print("\nRefusing to overwrite an existing run.")
         sys.exit(1)
 
-    print("\n[INFO] Class balance note:")
-    print("       waterlogging_area 13,219 | potholes 8,094 | damaged_footpath 624")
-    print("       open_manhole 432 | drainage_overflow 202")
-    print("       That is a 65:1 imbalance. Expect the three small classes to")
-    print("       train weakly. Report per-class metrics, not just overall mAP.")
-
-    print("\n[INFO] Loading YOLOv8s...")
+    print("\n[INFO] Loading YOLOv8m...")
     model = YOLO(MODEL_WEIGHTS)
     print("[INFO] Model loaded.")
 
@@ -218,74 +315,81 @@ def main():
         imgsz=IMAGE_SIZE,
 
         # Hardware
-        batch=BATCH_SIZE,
+        batch=batch_size,
         device=device,
-        amp=True,
-        workers=4,
+        workers=workers,
+        amp=amp,
 
         # Reproducibility
         seed=SEED,
 
-        # Validation and checkpoints
+        # Validation/checkpoints
         val=True,
         save=True,
         save_period=-1,
 
-        # Output — exist_ok False so a rerun cannot destroy a finished run
+        # Output
         project=str(RUNS_DIR),
         name=RUN_NAME,
         exist_ok=False,
 
-        # ---- Augmentation: aimed at cross-domain robustness ----
-        # Our footage spans colour drone video, greyscale CCTV and compressed
-        # social clips. These force the model to generalise across all of it.
+        # ----------------------------------------------------
+        # Augmentation
+        # ----------------------------------------------------
+
         hsv_h=0.015,
-        hsv_s=0.90,        # heavy — breaks reliance on colour cues
-        hsv_v=0.55,        # dark and blown-out frames
-        degrees=12.0,      # gimbal / camera angle variation
+        hsv_s=0.90,
+        hsv_v=0.55,
+
+        degrees=12.0,
         translate=0.12,
-        scale=0.55,        # altitude and zoom variation
+        scale=0.55,
         shear=2.0,
-        perspective=0.0006,  # oblique vs nadir viewpoint
+        perspective=0.0006,
+
         flipud=0.10,
         fliplr=0.50,
+
         mosaic=1.00,
         mixup=0.10,
         copy_paste=0.10,
-        erasing=0.20,      # occlusion and compression artefacts
-        close_mosaic=10,   # disable mosaic for the last 10 epochs
+        erasing=0.20,
+
+        close_mosaic=10,
 
         verbose=True,
     )
 
     # ========================================================
+    # TRAINING RESULT
+    # ========================================================
 
     weights_directory = run_directory / "weights"
+
     best_model = weights_directory / "best.pt"
     last_model = weights_directory / "last.pt"
+    results_csv = run_directory / "results.csv"
 
     print("\n" + "=" * 70)
     print("TRAINING COMPLETE")
     print("=" * 70)
+
     print(f"\nRun directory : {run_directory}")
     print(f"Best model    : {best_model}")
     print(f"Last model    : {last_model}")
+    print(f"Results CSV   : {results_csv}")
 
-    print("\n[SUCCESS] best.pt created." if best_model.exists()
-          else "\n[WARNING] best.pt not found.")
-    print("[SUCCESS] last.pt created." if last_model.exists()
-          else "[WARNING] last.pt not found.")
+    print(
+        "\n[SUCCESS] best.pt created."
+        if best_model.exists()
+        else "\n[WARNING] best.pt not found."
+    )
 
-    print("""
-SEND BACK
----------
-  runs/yolov8s_5class/weights/best.pt
-  runs/yolov8s_5class/weights/last.pt
-  runs/yolov8s_5class/results.csv        <- proves which run produced it
-  the final per-class validation table from this terminal
-
-Do not rename best.pt. Do not send only best.pt without results.csv.
-""")
+    print(
+        "[SUCCESS] last.pt created."
+        if last_model.exists()
+        else "[WARNING] last.pt not found."
+    )
 
 
 if __name__ == "__main__":

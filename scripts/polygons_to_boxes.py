@@ -55,7 +55,7 @@ def main():
             print(f"Backup already exists at {backup} — leaving it alone.")
         else:
             backup.mkdir(parents=True)
-            for split in ("train", "valid", "test"):
+            for split in ("train", "val", "test"):
                 src = dataset / split / "labels"
                 if src.exists():
                     shutil.copytree(src, backup / split)
@@ -63,7 +63,7 @@ def main():
 
     grand_conv = grand_kept = grand_dropped = 0
 
-    for split in ("train", "valid", "test"):
+    for split in ("train", "val", "test"):
         labels = dataset / split / "labels"
         if not labels.exists():
             continue
