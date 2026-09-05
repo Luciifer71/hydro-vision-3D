@@ -5,6 +5,7 @@ import OSDOverlay from './OSDOverlay.jsx';
 import AttitudeCard from './AttitudeCard.jsx';
 import HazardFeed from './HazardFeed.jsx';
 import MissionStatusPanel from './MissionStatusPanel.jsx';
+import VideoExportCard from './VideoExportCard.jsx';
 import ErrorBoundary from './ErrorBoundary.jsx';
 import ConfidenceSlider from './ConfidenceSlider.jsx';
 import { computeSessionRisk } from '../lib/derive.js';
@@ -71,6 +72,10 @@ export default function FlyView() {
             pitch={telemetry.pitch || 0} 
             roll={telemetry.roll || 0} 
           />
+        </ErrorBoundary>
+
+        <ErrorBoundary name="Video Export Card">
+          <VideoExportCard streamRunning={isLive || streamRunning} />
         </ErrorBoundary>
 
         <ErrorBoundary name="Hazard Feed">
