@@ -49,7 +49,7 @@ from src.perception.depth_engine import DepthEngine
 from src.spatial.geo_projector import GeoProjector
 
 torch.set_grad_enabled(False)
-
+import src.runtime_config as CFG
 
 # ===========================================================================
 # CONFIGURATION — every tunable in one place, no magic numbers below
@@ -1036,6 +1036,20 @@ def generate_mjpeg_stream():
 # ROUTES
 # ===========================================================================
 
+@app.get("/api/config")
+def get_config():
+    return CFG.get()
+
+@app.post("/api/config")
+async def set_config(patch: dict):
+    return {"status": "updated", "config": CFG.update(patch),
+            "note": "Applies to the next processing run."}
+
+@app.post("/api/config/reset")
+def reset_config():
+    return {"status": "reset", "config": CFG.reset()}
+
+
 @app.get("/api/stream_video")
 @app.get("/stream")
 async def api_stream_video():
@@ -1043,8 +1057,6 @@ async def api_stream_video():
         generate_mjpeg_stream(),
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
-
-
 
 def _safe_name(filename: str) -> str:
     """Never trust a client filename. Strip path components and unsafe chars."""
