@@ -17,7 +17,9 @@ export default function DetectionsPage() {
 
   const [isSyncing, setIsSyncing] = useState(false);
 
-  if (!currentState) return <EmptySessionState message="No Detections Loaded" />;
+  if (!currentState && hazards.length === 0) {
+    return <EmptySessionState message="No Detections Loaded" />;
+  }
 
   // 1. Filter Logic
   const filtered = hazards.filter(h => {
@@ -36,7 +38,6 @@ export default function DetectionsPage() {
     const q = (detectionSearch || '').toLowerCase();
     const typeLabel = (CONFIG.TYPE_LABELS[h.type] || CONFIG.TYPE_LABELS[h.class_name] || h.type || '').toLowerCase();
     
-    // Search tracks ID, Type, and Zone
     const matchSearch = !q || 
       String(h.hazard_id || h.track_id).toLowerCase().includes(q) || 
       hazardType.includes(q) || 
@@ -46,27 +47,21 @@ export default function DetectionsPage() {
     return matchType && matchSearch;
   });
 
-  // 2. Smart Sorting (Severity First, then Volume)
+  // 2. Smart Sorting
   const severityWeight = { CRITICAL: 4, HIGH: 3, MODERATE: 2, LOW: 1 };
   
   const sortedAndFiltered = [...filtered].sort((a, b) => {
     const sevA = severityWeight[(a.severity || 'LOW').toUpperCase()] || 1;
     const sevB = severityWeight[(b.severity || 'LOW').toUpperCase()] || 1;
-    
-    if (sevA !== sevB) {
-      return sevB - sevA; // Highest severity first
-    }
-    // If severity is the same, sort by area
+    if (sevA !== sevB) return sevB - sevA;
     const areaA = Number(a.surface_area_m2 || 0);
     const areaB = Number(b.surface_area_m2 || 0);
     return areaB - areaA;
   });
 
-  // 3. Performance Protection: Only render top 100 rows to prevent DOM lag during live video stream
   const displayLimit = 100;
   const displayList = sortedAndFiltered.slice(0, displayLimit);
 
-  // Real Supabase Sync Handler
   const handleSupabaseSync = async () => {
     setIsSyncing(true);
     const result = await syncHazardsToSupabase();
@@ -80,41 +75,37 @@ export default function DetectionsPage() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-        
-        {/* Header Area */}
-        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <div>
-            <span className="card-title">All Detections</span>
-            <span className="card-badge badge-info" style={{ marginLeft: 10 }}>{filtered.length} records</span>
-          </div>
-          
-          <button 
-            onClick={handleSupabaseSync}
-            disabled={isSyncing || streamRunning || hazards.length === 0}
-            style={{ 
-              background: streamRunning ? '#333' : '#10b981', 
-              color: streamRunning ? '#888' : '#fff', 
-              border: 'none', padding: '6px 12px', borderRadius: 4, fontSize: '0.75rem', fontWeight: 600, cursor: streamRunning ? 'not-allowed' : 'pointer' 
-            }}
-          >
-            {streamRunning ? 'Streaming (Sync Locked)' : isSyncing ? 'Syncing...' : 'Sync to Supabase'}
-          </button>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, height: '100%' }}>
+      <div className="bf-fieldset" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        {/* Betaflight Embedded Pill Badge */}
+        <div className="bf-badge-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <circle cx="12" cy="12" r="10" />
+            <line x1="22" y1="12" x2="18" y2="12" />
+            <line x1="6" y1="12" x2="2" y2="12" />
+            <line x1="12" y1="6" x2="12" y2="2" />
+            <line x1="12" y1="22" x2="12" y2="18" />
+          </svg>
+          HAZARD INVENTORY ({filtered.length} RECORDS)
         </div>
 
-        {/* Filters Area */}
-        <div className="card-body" style={{ paddingBottom: 0, flexShrink: 0 }}>
-          <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+        {/* Filter Controls & Cloud Sync Action */}
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 10, flex: 1 }}>
             <input
               className="form-input"
-              placeholder="Search by ID, type, zone..."
+              placeholder="Search by ID, class type, municipal zone..."
               value={detectionSearch || ''}
               onChange={e => setDetectionSearch(e.target.value)}
               style={{ flex: 1 }}
             />
-            <select className="form-select" style={{ width: 220 }} value={detectionTypeFilter || 'all'} onChange={e => setDetectionTypeFilter(e.target.value)}>
-              <option value="all">All Types</option>
+            <select 
+              className="form-select" 
+              style={{ width: 220 }} 
+              value={detectionTypeFilter || 'all'} 
+              onChange={e => setDetectionTypeFilter(e.target.value)}
+            >
+              <option value="all">All Classifications</option>
               <option value="potholes">Potholes</option>
               <option value="damaged_footpath">Damaged Footpath</option>
               <option value="drainage_overflow">Drainage Overflow</option>
@@ -122,22 +113,49 @@ export default function DetectionsPage() {
               <option value="waterlogging_area">Waterlogging Area</option>
             </select>
           </div>
+
+          <button 
+            onClick={handleSupabaseSync}
+            disabled={isSyncing || streamRunning || hazards.length === 0}
+            className="btn btn-primary"
+            style={{ 
+              fontSize: '0.75rem', 
+              padding: '7px 14px',
+              whiteSpace: 'nowrap',
+              background: streamRunning ? 'rgba(255,255,255,0.06)' : undefined,
+              color: streamRunning ? 'var(--text-faint)' : undefined,
+              cursor: streamRunning ? 'not-allowed' : 'pointer'
+            }}
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
+            </svg>
+            {streamRunning ? 'Streaming (Locked)' : isSyncing ? 'Syncing...' : 'Sync to Supabase Cloud'}
+          </button>
         </div>
 
         {/* Live Table Area */}
-        <div className="table-wrap" style={{ flex: 1, overflowY: 'auto', borderTop: '1px solid #333' }}>
+        <div className="table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
           <table className="data-table" style={{ width: '100%' }}>
-            <thead style={{ position: 'sticky', top: 0, background: '#1e1e1e', zIndex: 10 }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
               <tr>
-                <th>Track ID</th><th>Type</th><th>Confidence</th><th>Area (m²)</th>
-                <th>Location (Lat, Lon)</th><th>Severity</th><th>Priority</th><th>Zone</th><th>Status</th><th>Action</th>
+                <th>Hazard ID</th>
+                <th>Classification</th>
+                <th>Confidence</th>
+                <th>Footprint</th>
+                <th>Coordinates (WGS84)</th>
+                <th>Threat Severity</th>
+                <th>Risk Priority</th>
+                <th>Municipal Zone</th>
+                <th>Lifecycle Status</th>
+                <th>Action</th>
               </tr>
             </thead>
             <tbody>
               {displayList.length === 0 ? (
                 <tr>
                   <td colSpan={10} style={{ textAlign: 'center', color: 'var(--text-faint)', padding: 40 }}>
-                    {hazards.length === 0 ? 'No detections yet — Start the video pipeline.' : 'No hazards match your filter criteria.'}
+                    {hazards.length === 0 ? 'No detections yet — Run the video perception pipeline.' : 'No hazards match your filter query.'}
                   </td>
                 </tr>
               ) : (
@@ -147,33 +165,39 @@ export default function DetectionsPage() {
                   const lat = h.location?.latitude ?? h.latitude;
                   const lon = h.location?.longitude ?? h.longitude;
                   const clsKey = h.class_name || h.type;
-                  const typeIcon = CONFIG.TYPE_ICONS[clsKey] || CONFIG.TYPE_ICONS[h.type] || '⚠️';
                   const typeLabel = CONFIG.TYPE_LABELS[clsKey] || CONFIG.TYPE_LABELS[h.type] || clsKey;
                   const uid = h.hazard_id || `HAZ-${idx}`;
 
                   return (
                     <tr key={uid}>
-                      <td style={{ fontFamily: 'var(--font-mono)', color: '#ffbb00' }}>{uid}</td>
-                      <td><span className="type-badge" style={{ background: '#222' }}>{typeIcon} {typeLabel}</span></td>
-                      <td>{((h.confidence ?? 1) * 100).toFixed(1)}%</td>
-                      <td style={{ fontWeight: 600 }}>{area.toFixed(1)}</td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: '#888' }}>
+                      <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--amber)', fontWeight: 800 }}>{uid}</td>
+                      <td>
+                        <span className="type-badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                          {typeLabel.toUpperCase()}
+                        </span>
+                      </td>
+                      <td style={{ fontFamily: 'var(--font-mono)' }}>{((h.confidence ?? 1) * 100).toFixed(1)}%</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{area.toFixed(1)} m²</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
                         {typeof lat === 'number' ? lat.toFixed(5) : '—'}, {typeof lon === 'number' ? lon.toFixed(5) : '—'}
                       </td>
                       <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
-                      <td style={{ fontFamily: 'var(--font-mono)' }}>{h.priority_score ?? (area * 10).toFixed(0)}</td>
-                      <td style={{ fontSize: '0.72rem', color: '#888' }}>{h.zone || '—'}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{h.priority_score ?? (area * 10).toFixed(0)}</td>
+                      <td style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{h.zone || '—'}</td>
                       <td>
                         <span style={{ 
-                          color: h.status === 'RESOLVED' ? '#666' : h.status === 'IN_PROGRESS' ? '#f59e0b' : '#10b981', 
-                          fontSize: '0.72rem', fontWeight: 700 
+                          color: h.status === 'RESOLVED' ? 'var(--text-faint)' : h.status === 'IN_PROGRESS' ? 'var(--warning)' : 'var(--green)', 
+                          fontSize: '0.72rem', 
+                          fontWeight: 800,
+                          fontFamily: 'var(--font-mono)'
                         }}>
                           {h.status || 'OPEN'}
                         </span>
                       </td>
                       <td>
                         <select
-                          style={{ background: '#111', border: '1px solid #333', color: '#ccc', borderRadius: 4, padding: '4px', fontSize: '0.7rem', cursor: 'pointer' }}
+                          className="form-select"
+                          style={{ padding: '3px 6px', fontSize: '0.7rem', width: 'auto' }}
                           value={h.status || 'OPEN'}
                           onChange={e => updateHazardStatus(uid, e.target.value)}
                         >

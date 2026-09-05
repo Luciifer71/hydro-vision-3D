@@ -6,8 +6,6 @@ import EmptySessionState from '../components/EmptySessionState.jsx';
 import ErrorBoundary from '../components/ErrorBoundary.jsx';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
-
-// 🟢 Optimization: Disable chart animations to eliminate real-time streaming stutter
 ChartJS.defaults.animation.duration = 0;
 
 export default function DepthPage() {
@@ -45,7 +43,9 @@ export default function DepthPage() {
     return { list, totalArea, maxDepthIndex, avgDepthIndex };
   }, [hazards]);
 
-  if (!currentState) return <EmptySessionState message="No Depth Analysis Available" />;
+  if (!currentState && hazards.length === 0) {
+    return <EmptySessionState message="No Depth Telemetry Recorded" />;
+  }
 
   const chartSlice = metrics.list.slice(0, 12);
   const chartData = {
@@ -66,6 +66,9 @@ export default function DepthPage() {
     plugins: {
       legend: { display: false },
       tooltip: {
+        backgroundColor: 'rgba(10,14,22,0.95)',
+        borderColor: 'rgba(255,184,0,0.4)',
+        borderWidth: 1,
         callbacks: {
           label: (ctx) => `Depth Index: ${ctx.raw}`
         }
@@ -74,13 +77,13 @@ export default function DepthPage() {
     scales: {
       y: {
         beginAtZero: true,
-        title: { display: true, text: 'Relative Index', color: '#94a3b8' },
+        title: { display: true, text: 'Relative Index', color: '#94a3b8', font: { family: 'monospace' } },
         grid: { color: 'rgba(255,255,255,0.05)' },
-        ticks: { color: '#94a3b8' }
+        ticks: { color: '#94a3b8', font: { family: 'monospace' } }
       },
       x: {
         grid: { display: false },
-        ticks: { color: '#94a3b8' }
+        ticks: { color: '#94a3b8', font: { family: 'monospace' } }
       }
     }
   };
@@ -89,110 +92,113 @@ export default function DepthPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* 4 Feature Overview Cards Grid */}
       <div className="info-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
-        <div className="info-card" style={{ borderColor: 'rgba(16, 185, 129, 0.4)', background: '#121212', padding: 12, borderRadius: 6, border: '1px solid #333' }}>
-          <span style={{ fontSize: '0.65rem', background: '#10b981', color: '#1a1a1a', fontWeight: 800, padding: '2px 6px', borderRadius: 3, float: 'right' }}>Active</span>
-          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: '#10b981' }}>Relative Depth Index</h4>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            Estimate relative depth from a single drone camera frame using Depth Anything V2 model. Values range 0.0 to 1.0.
+        <div className="info-card">
+          <span style={{ fontSize: '0.62rem', background: 'var(--green)', color: '#061e14', fontWeight: 800, padding: '2px 8px', borderRadius: 4, float: 'right' }}>Active</span>
+          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: 'var(--green)', textAlign: 'left', fontWeight: 800 }}>Relative Depth Index</h4>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5, textAlign: 'left' }}>
+            Estimates monocular depth from single drone frames using Depth Anything V2. Normalized unitless index (0.0 to 1.0).
           </p>
         </div>
 
-        <div className="info-card" style={{ borderColor: 'rgba(255, 187, 0, 0.4)', background: '#121212', padding: 12, borderRadius: 6, border: '1px solid #333' }}>
-          <span style={{ fontSize: '0.65rem', background: '#ffbb00', color: '#1a1a1a', fontWeight: 800, padding: '2px 6px', borderRadius: 3, float: 'right' }}>Active</span>
-          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: '#ffbb00' }}>Area Estimation</h4>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            Calculate pothole spatial area in m² using drone altitude and ground sample distance.
+        <div className="info-card">
+          <span style={{ fontSize: '0.62rem', background: 'var(--amber)', color: '#0b0e14', fontWeight: 800, padding: '2px 8px', borderRadius: 4, float: 'right' }}>Active</span>
+          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: 'var(--amber)', textAlign: 'left', fontWeight: 800 }}>Footprint & GSD Area</h4>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5, textAlign: 'left' }}>
+            Calculates real-world ground footprint in m² via camera focal length, sensor dimensions, and flight altitude.
           </p>
         </div>
 
-        <div className="info-card" style={{ background: '#121212', padding: 12, borderRadius: 6, border: '1px solid #333' }}>
-          <span className="coming-soon" style={{ fontSize: '0.65rem', background: '#333', color: '#888', fontWeight: 700, padding: '2px 6px', borderRadius: 3, float: 'right' }}>Coming Soon</span>
-          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: '#ccc' }}>Surface Normals</h4>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            Compute surface normal vectors from 3D point clouds for terrain analysis.
+        <div className="info-card">
+          <span className="coming-soon">Next-Gen</span>
+          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: 'var(--text-secondary)', textAlign: 'left', fontWeight: 800 }}>Surface Normals</h4>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5, textAlign: 'left' }}>
+            Extracts gradient slope vectors and road curvature angles for hydraulic run-off simulation.
           </p>
         </div>
 
-        <div className="info-card" style={{ background: '#121212', padding: 12, borderRadius: 6, border: '1px solid #333' }}>
-          <span className="coming-soon" style={{ fontSize: '0.65rem', background: '#333', color: '#888', fontWeight: 700, padding: '2px 6px', borderRadius: 3, float: 'right' }}>Coming Soon</span>
-          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: '#ccc' }}>Point Cloud</h4>
-          <p style={{ fontSize: '0.78rem', color: 'var(--text-muted)', lineHeight: 1.6 }}>
-            Generate 3D point clouds from depth maps using camera intrinsics for spatial reconstruction.
+        <div className="info-card">
+          <span className="coming-soon">Next-Gen</span>
+          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: 'var(--text-secondary)', textAlign: 'left', fontWeight: 800 }}>Point Cloud Mesh</h4>
+          <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5, textAlign: 'left' }}>
+            Generates georeferenced 3D point clouds from multi-view drone telemetry for GIS CAD exports.
           </p>
         </div>
       </div>
 
       {/* KPI Cards */}
-      <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
-        {[
-          { label: 'Total Area Detected', value: `${metrics.totalArea.toFixed(1)} m²` },
-          { label: 'Avg Depth Index', value: `${metrics.avgDepthIndex.toFixed(3)}` },
-          { label: 'Max Depth Index', value: `${metrics.maxDepthIndex.toFixed(3)}` },
-          { label: 'Depth Engine', value: 'Depth Anything V2' },
-        ].map(({ label, value }) => (
-          <div className="kpi-card" key={label}>
-            <span className="kpi-label">{label}</span>
-            <div className="kpi-value" style={{ fontSize: '1.25rem', color: '#ffbb00' }}>{value}</div>
-          </div>
-        ))}
+      <div className="kpi-grid">
+        <div className="kpi-card">
+          <span className="kpi-label">Cumulative Footprint</span>
+          <div className="kpi-value" style={{ color: 'var(--amber)' }}>{metrics.totalArea.toFixed(1)} m²</div>
+        </div>
+        <div className="kpi-card">
+          <span className="kpi-label">Average Depth Index</span>
+          <div className="kpi-value" style={{ color: 'var(--cyan)' }}>{metrics.avgDepthIndex.toFixed(3)}</div>
+        </div>
+        <div className="kpi-card">
+          <span className="kpi-label">Maximum Hazard Depth</span>
+          <div className="kpi-value" style={{ color: 'var(--danger)' }}>{metrics.maxDepthIndex.toFixed(3)}</div>
+        </div>
+        <div className="kpi-card">
+          <span className="kpi-label">Depth Model Engine</span>
+          <div className="kpi-value" style={{ color: 'var(--green)', fontSize: '1.2rem' }}>Depth Anything V2</div>
+        </div>
       </div>
 
       {/* Monocular Depth Chart */}
-      <div className="card">
-        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <span className="card-title">Monocular Depth Estimation Profile (Depth Anything V2)</span>
-          <span className="card-badge badge-live" style={{ color: '#10b981', fontSize: '0.7rem' }}>● Active Dense Inference</span>
+      <div className="bf-fieldset">
+        <div className="bf-badge-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          DEPTH ANYTHING V2 ESTIMATION PROFILE
         </div>
-        <div className="card-body">
-          <div className="chart-wrap" style={{ height: 220 }}>
-            <ErrorBoundary name="Depth Estimation Bar Chart">
-              <Bar data={chartData} options={chartOptions} />
-            </ErrorBoundary>
-          </div>
+        <div className="chart-wrap" style={{ height: 220, marginTop: 8 }}>
+          <ErrorBoundary name="Depth Estimation Bar Chart">
+            <Bar data={chartData} options={chartOptions} />
+          </ErrorBoundary>
         </div>
       </div>
 
       {/* Depth & Volume Hazard Analytics Table */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">3D Volumetric & Spatial Depth Breakdown</span>
-        </div>
-        <div className="table-wrap">
+      <div className="bf-fieldset">
+        <div className="bf-badge-title">3D VOLUMETRIC & SPATIAL BREAKDOWN</div>
+        <div className="table-wrap" style={{ marginTop: 8 }}>
           <table className="data-table">
             <thead>
               <tr>
                 <th>Hazard ID</th>
-                <th>Class Name</th>
+                <th>Classification</th>
                 <th>Surface Area (m²)</th>
-                <th>Relative Depth Index</th>
+                <th>Depth Index</th>
                 <th>Confidence</th>
-                <th>Depth Classification</th>
+                <th>Depression Profile</th>
               </tr>
             </thead>
             <tbody>
               {metrics.list.length === 0 ? (
                 <tr>
-                  <td colSpan={7} style={{ textAlign: 'center', padding: 30, color: '#666' }}>
-                    No depth telemetry recorded — start the video pipeline to process live frames.
+                  <td colSpan={6} style={{ textAlign: 'center', padding: 28, color: 'var(--text-faint)' }}>
+                    No depth telemetry recorded yet.
                   </td>
                 </tr>
               ) : (
                 metrics.list.map((item) => (
                   <tr key={item.id}>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: '#10b981' }}>{item.id}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--amber)' }}>{item.id}</td>
                     <td>
-                      <code style={{ background: '#1e293b', padding: '2px 6px', borderRadius: 4, color: '#f8fafc' }}>
-                        {item.className}
-                      </code>
+                      <span className="type-badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                        {item.className.replace(/_/g, ' ').toUpperCase()}
+                      </span>
                     </td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{item.area != null ? item.area.toFixed(1) : '—'}</td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700, color: (item.depthIndex != null && item.depthIndex > 0.7) ? '#ef4444' : '#f59e0b' }}>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{item.area != null ? `${item.area.toFixed(1)} m²` : '—'}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: (item.depthIndex != null && item.depthIndex > 0.7) ? 'var(--danger)' : 'var(--warning)' }}>
                       {item.depthIndex != null ? item.depthIndex.toFixed(3) : '—'}
                     </td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{item.confidence != null ? (item.confidence * 100).toFixed(1) + '%' : '—'}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>{item.confidence != null ? `${(item.confidence * 100).toFixed(1)}%` : '—'}</td>
                     <td>
                       <span className={item.depthIndex != null ? `sev-badge ${(item.depthIndex > 0.7 ? 'CRITICAL' : item.depthIndex > 0.4 ? 'HIGH' : 'LOW').toLowerCase()}` : 'type-badge'}>
-                        {item.depthIndex != null ? (item.depthIndex > 0.7 ? 'DEEP VOID' : item.depthIndex > 0.4 ? 'MODERATE DEPRESSION' : 'SURFACE DEFECT') : '—'}
+                        {item.depthIndex != null ? (item.depthIndex > 0.7 ? 'DEEP CAVITY' : item.depthIndex > 0.4 ? 'MODERATE DEPRESSION' : 'SURFACE DEFECT') : '—'}
                       </span>
                     </td>
                   </tr>

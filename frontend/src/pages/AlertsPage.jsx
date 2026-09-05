@@ -6,9 +6,10 @@ export default function AlertsPage() {
   const { hazards = [], updateHazardStatus, currentState } = useStore();
   const [filter, setFilter] = useState('ALL');
 
-  if (!currentState) return <EmptySessionState message="No Alerts Available" />;
+  if (!currentState && hazards.length === 0) {
+    return <EmptySessionState message="No Alerts Available" />;
+  }
 
-  // Filter for alerts (usually you only want to see actionable items, not 'RESOLVED' ones)
   const activeAlerts = hazards.filter(h => h.status !== 'RESOLVED');
   
   const displayAlerts = activeAlerts.filter(h => {
@@ -23,81 +24,95 @@ export default function AlertsPage() {
   };
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, height: '100%' }}>
       {/* Alert KPI Cards */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12, flexShrink: 0 }}>
-        <div className="card" style={{ borderTop: '3px solid #ef4444' }}>
-          <div className="card-body">
-            <div style={{ fontSize: '0.75rem', color: '#888', fontWeight: 700 }}>CRITICAL</div>
-            <div style={{ fontSize: '2rem', color: '#ef4444', fontWeight: 900 }}>{counts.CRITICAL}</div>
-          </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, flexShrink: 0 }}>
+        <div className="kpi-card" style={{ borderTopColor: 'var(--danger)' }}>
+          <span className="kpi-label">CRITICAL THREATS</span>
+          <div className="kpi-value" style={{ color: 'var(--danger)' }}>{counts.CRITICAL}</div>
+          <span className="kpi-trend up">Requires immediate action</span>
         </div>
-        <div className="card" style={{ borderTop: '3px solid #f97316' }}>
-          <div className="card-body">
-            <div style={{ fontSize: '0.75rem', color: '#888', fontWeight: 700 }}>HIGH</div>
-            <div style={{ fontSize: '2rem', color: '#f97316', fontWeight: 900 }}>{counts.HIGH}</div>
-          </div>
+
+        <div className="kpi-card" style={{ borderTopColor: 'var(--orange)' }}>
+          <span className="kpi-label">HIGH SEVERITY</span>
+          <div className="kpi-value" style={{ color: 'var(--orange)' }}>{counts.HIGH}</div>
+          <span className="kpi-trend">Contractor crew dispatch</span>
         </div>
-        <div className="card" style={{ borderTop: '3px solid #f59e0b' }}>
-          <div className="card-body">
-            <div style={{ fontSize: '0.75rem', color: '#888', fontWeight: 700 }}>MODERATE</div>
-            <div style={{ fontSize: '2rem', color: '#f59e0b', fontWeight: 900 }}>{counts.MODERATE}</div>
-          </div>
+
+        <div className="kpi-card" style={{ borderTopColor: 'var(--warning)' }}>
+          <span className="kpi-label">MODERATE HAZARDS</span>
+          <div className="kpi-value" style={{ color: 'var(--warning)' }}>{counts.MODERATE}</div>
+          <span className="kpi-trend">Scheduled inspection</span>
         </div>
       </div>
 
       {/* Alerts Table */}
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
-        <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between' }}>
-          <span className="card-title">Active Alerts</span>
-          <div style={{ display: 'flex', gap: 6 }}>
-            {['ALL', 'CRITICAL', 'HIGH', 'MODERATE'].map(f => (
-              <button 
-                key={f} 
-                onClick={() => setFilter(f)}
-                style={{ 
-                  background: filter === f ? '#333' : 'transparent', 
-                  color: filter === f ? '#fff' : '#888', 
-                  border: '1px solid #444', borderRadius: 4, padding: '4px 10px', fontSize: '0.7rem', cursor: 'pointer' 
-                }}
-              >
-                {f}
-              </button>
-            ))}
-          </div>
+      <div className="bf-fieldset" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
+        <div className="bf-badge-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" />
+            <line x1="12" y1="8" x2="12" y2="12" />
+            <line x1="12" y1="16" x2="12.01" y2="16" />
+          </svg>
+          ACTIVE INCIDENT ALERTS ({displayAlerts.length})
+        </div>
+
+        <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, marginTop: 8, marginBottom: 10 }}>
+          {['ALL', 'CRITICAL', 'HIGH', 'MODERATE'].map(f => (
+            <button 
+              key={f} 
+              onClick={() => setFilter(f)}
+              className={`filter-btn ${filter === f ? 'active' : ''}`}
+              style={{ fontSize: '0.72rem', padding: '4px 10px' }}
+            >
+              {f}
+            </button>
+          ))}
         </div>
         
         <div className="table-wrap" style={{ flex: 1, overflowY: 'auto' }}>
           <table className="data-table" style={{ width: '100%' }}>
-            <thead style={{ position: 'sticky', top: 0, background: '#1e1e1e', zIndex: 10 }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10 }}>
               <tr>
-                <th>Track ID</th><th>Type</th><th>Area (m²)</th><th>Severity</th><th>Action</th>
+                <th>Hazard ID</th>
+                <th>Classification</th>
+                <th>Surface Footprint</th>
+                <th>Severity</th>
+                <th>Resolution Action</th>
               </tr>
             </thead>
             <tbody>
               {displayAlerts.length === 0 ? (
-                <tr><td colSpan={5} style={{ textAlign: 'center', padding: 40, color: '#666' }}>No active alerts for this severity level.</td></tr>
+                <tr>
+                  <td colSpan={5} style={{ textAlign: 'center', padding: 40, color: 'var(--text-faint)' }}>
+                    No active alerts matching filter. All infrastructure hazards acknowledged.
+                  </td>
+                </tr>
               ) : (
                 displayAlerts.map((h, i) => {
                   const area = Number(h.surface_area_m2) || 0;
                   const sev = (h.severity || 'LOW').toLowerCase();
                   const clsKey = h.class_name || h.type;
-                  const typeIcon = CONFIG.TYPE_ICONS[clsKey] || CONFIG.TYPE_ICONS[h.type] || '⚠️';
                   const typeLabel = CONFIG.TYPE_LABELS[clsKey] || CONFIG.TYPE_LABELS[h.type] || clsKey;
                   const uid = h.hazard_id || `HAZ-${i}`;
 
                   return (
                     <tr key={uid}>
-                      <td style={{ fontFamily: 'var(--font-mono)', color: '#ffbb00' }}>{uid}</td>
-                      <td><span className="type-badge" style={{ background: '#222' }}>{typeIcon} {typeLabel}</span></td>
-                      <td style={{ fontWeight: 600 }}>{area.toFixed(1)}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', color: 'var(--amber)', fontWeight: 800 }}>{uid}</td>
+                      <td>
+                        <span className="type-badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                          {typeLabel.toUpperCase()}
+                        </span>
+                      </td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{area.toFixed(1)} m²</td>
                       <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
                       <td>
                         <button 
                           onClick={() => updateHazardStatus(uid, 'RESOLVED')}
-                          style={{ background: 'rgba(16,185,129,0.1)', color: '#10b981', border: '1px solid rgba(16,185,129,0.3)', borderRadius: 4, padding: '4px 10px', fontSize: '0.7rem', cursor: 'pointer', fontWeight: 700 }}
+                          className="btn btn-outline"
+                          style={{ borderColor: 'var(--green)', color: 'var(--green)', padding: '4px 12px', fontSize: '0.72rem' }}
                         >
-                          Acknowledge
+                          ✔ Acknowledge & Resolve
                         </button>
                       </td>
                     </tr>

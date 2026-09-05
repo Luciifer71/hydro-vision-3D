@@ -6,8 +6,6 @@ import EmptySessionState from '../components/EmptySessionState.jsx';
 import ErrorBoundary from '../components/ErrorBoundary.jsx';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
-
-// 🟢 Optimization: Disable chart animations to eliminate real-time stuttering
 ChartJS.defaults.animation.duration = 0;
 
 export default function AreaAnalyticsPage() {
@@ -40,18 +38,19 @@ export default function AreaAnalyticsPage() {
     });
 
     const avgArea = hazards.length ? totalArea / hazards.length : 0;
-
     return { totalArea, maxArea, avgArea, classStats };
   }, [hazards]);
 
-  if (!currentState) return <EmptySessionState message="No Spatial Area Data Available" />;
+  if (!currentState && hazards.length === 0) {
+    return <EmptySessionState message="No Spatial Area Telemetry Available" />;
+  }
 
   const classKeys = Object.keys(metrics.classStats);
   const barData = {
     labels: classKeys.length > 0 ? classKeys.map(k => CONFIG.TYPE_LABELS?.[k] || k) : ['No Data'],
     datasets: [
       {
-        label: 'Total Area (m²)',
+        label: 'Total Footprint (m²)',
         data: classKeys.length > 0 ? classKeys.map(k => Number(metrics.classStats[k].totalArea.toFixed(1))) : [0],
         backgroundColor: classKeys.length > 0 ? classKeys.map(k => CONFIG.TYPE_COLORS?.[k] || '#10b981') : ['#333'],
         borderRadius: 4,
@@ -65,21 +64,24 @@ export default function AreaAnalyticsPage() {
     plugins: {
       legend: { display: false },
       tooltip: {
+        backgroundColor: 'rgba(10,14,22,0.95)',
+        borderColor: 'rgba(255,184,0,0.4)',
+        borderWidth: 1,
         callbacks: {
-          label: (ctx) => `Area: ${ctx.raw} m²`
+          label: (ctx) => `Footprint: ${ctx.raw} m²`
         }
       }
     },
     scales: {
       y: {
         beginAtZero: true,
-        title: { display: true, text: 'Area (m²)', color: '#94a3b8' },
+        title: { display: true, text: 'Displacement (m²)', color: '#94a3b8', font: { family: 'monospace' } },
         grid: { color: 'rgba(255,255,255,0.05)' },
-        ticks: { color: '#94a3b8' }
+        ticks: { color: '#94a3b8', font: { family: 'monospace' } }
       },
       x: {
         grid: { display: false },
-        ticks: { color: '#94a3b8' }
+        ticks: { color: '#94a3b8', font: { family: 'monospace' } }
       }
     }
   };
@@ -88,68 +90,79 @@ export default function AreaAnalyticsPage() {
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
       {/* KPI Grid */}
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(3, 1fr)' }}>
-        {[
-          { label: 'Total Surface Area', value: `${metrics.totalArea.toFixed(1)} m²` },
-          { label: 'Avg Area / Hazard', value: `${metrics.avgArea.toFixed(1)} m²` },
-          { label: 'Max Individual Area', value: `${metrics.maxArea.toFixed(1)} m²` },
-        ].map(({ label, value }) => (
-          <div className="kpi-card" key={label}>
-            <span className="kpi-label">{label}</span>
-            <div className="kpi-value" style={{ fontSize: '1.25rem', color: '#ffbb00' }}>{value}</div>
-          </div>
-        ))}
+        <div className="kpi-card">
+          <span className="kpi-label">Total Affected Footprint</span>
+          <div className="kpi-value" style={{ color: 'var(--amber)' }}>{metrics.totalArea.toFixed(1)} m²</div>
+          <span className="kpi-trend">Ground Sample Distance (GSD)</span>
+        </div>
+
+        <div className="kpi-card">
+          <span className="kpi-label">Average Area Per Hazard</span>
+          <div className="kpi-value" style={{ color: 'var(--cyan)' }}>{metrics.avgArea.toFixed(1)} m²</div>
+          <span className="kpi-trend">Mean spatial footprint</span>
+        </div>
+
+        <div className="kpi-card">
+          <span className="kpi-label">Largest Individual Defect</span>
+          <div className="kpi-value" style={{ color: 'var(--danger)' }}>{metrics.maxArea.toFixed(1)} m²</div>
+          <span className="kpi-trend up">Maximum single bounding envelope</span>
+        </div>
       </div>
 
       {/* Area Distribution Chart */}
-      <div className="card">
-        <div className="card-header">
-          <span className="card-title">Spatial Area Displacement by Hazard Classification (m²)</span>
+      <div className="bf-fieldset">
+        <div className="bf-badge-title">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+            <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+          </svg>
+          SPATIAL AREA BY CLASSIFICATION (m²)
         </div>
-        <div className="card-body">
-          <div className="chart-wrap" style={{ height: 220 }}>
-            <ErrorBoundary name="Area Distribution Chart">
-              <Bar data={barData} options={chartOptions} />
-            </ErrorBoundary>
-          </div>
+        <div className="chart-wrap" style={{ height: 220, marginTop: 8 }}>
+          <ErrorBoundary name="Area Distribution Chart">
+            <Bar data={barData} options={chartOptions} />
+          </ErrorBoundary>
         </div>
       </div>
 
       {/* Area Breakdown Table */}
-      <div className="card">
-        <div className="card-header"><span className="card-title">Detailed Area Breakdown</span></div>
-        <div className="table-wrap">
+      <div className="bf-fieldset">
+        <div className="bf-badge-title">PHOTOGRAMMETRIC AREA BREAKDOWN</div>
+        <div className="table-wrap" style={{ marginTop: 8 }}>
           <table className="data-table">
             <thead>
               <tr>
                 <th>Classification</th>
                 <th>Detections</th>
-                <th>Total Area (m²)</th>
-                <th>Avg Area (m²)</th>
-                <th>Max Area (m²)</th>
+                <th>Cumulative Footprint</th>
+                <th>Average Area</th>
+                <th>Peak Area</th>
               </tr>
             </thead>
             <tbody>
               {Object.entries(metrics.classStats).length === 0 ? (
                 <tr>
-                  <td colSpan={6} style={{ textAlign: 'center', padding: 30, color: '#666' }}>
-                    No spatial area data available — start the video pipeline to stream telemetry.
+                  <td colSpan={5} style={{ textAlign: 'center', padding: 30, color: 'var(--text-faint)' }}>
+                    No spatial area telemetry available. Run video pipeline to calculate GSD measurements.
                   </td>
                 </tr>
               ) : (
                 Object.entries(metrics.classStats).map(([cls, stat]) => (
                   <tr key={cls}>
                     <td>
-                      <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                        <span style={{ background: CONFIG.TYPE_COLORS?.[cls] || '#10b981', color: '#fff', padding: '1px 6px', borderRadius: 3, fontSize: '10px', fontWeight: 700 }}>
-                          {CONFIG.TYPE_ICONS?.[cls] || 'DEFECT'}
-                        </span>
-                        <strong>{CONFIG.TYPE_LABELS?.[cls] || cls}</strong>
+                      <span className="type-badge" style={{ background: 'rgba(255,255,255,0.05)' }}>
+                        {CONFIG.TYPE_LABELS?.[cls] || cls}
                       </span>
                     </td>
                     <td style={{ fontFamily: 'var(--font-mono)' }}>{stat.count}</td>
-                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: '#ffbb00' }}>{stat.totalArea.toFixed(1)} m²</td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{(stat.totalArea / stat.count).toFixed(1)} m²</td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{stat.maxArea.toFixed(1)} m²</td>
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: 'var(--amber)' }}>
+                      {stat.totalArea.toFixed(1)} m²
+                    </td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>
+                      {(stat.totalArea / stat.count).toFixed(1)} m²
+                    </td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>
+                      {stat.maxArea.toFixed(1)} m²
+                    </td>
                   </tr>
                 ))
               )}

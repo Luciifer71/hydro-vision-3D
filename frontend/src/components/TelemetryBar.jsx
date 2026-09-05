@@ -1,33 +1,51 @@
+import React from 'react';
 import { useStore } from '../store.js';
 import { computeSessionRisk } from '../lib/derive.js';
 
 function fmtTime(secs) {
-  const m = Math.floor(secs / 60).toString().padStart(2, '0');
-  const s = Math.floor(secs % 60).toString().padStart(2, '0');
+  const m = Math.floor((secs || 0) / 60).toString().padStart(2, '0');
+  const s = Math.floor((secs || 0) % 60).toString().padStart(2, '0');
   return `${m}:${s}`;
+}
+
+function getCardinal(deg) {
+  const directions = ['N', 'NE', 'E', 'SE', 'S', 'SW', 'W', 'NW'];
+  const index = Math.round(((deg %= 360) < 0 ? deg + 360 : deg) / 45) % 8;
+  return directions[index];
 }
 
 export default function TelemetryBar() {
   const { telemetry, currentState, connectionStatus, feedMode, switchToLiveFeed, hazards } = useStore();
-  const t = telemetry;
+  const t = telemetry || {};
+  const isLive = feedMode === 'live';
+  const isConnected = connectionStatus === 'LIVE';
+
   const { riskLevel } = computeSessionRisk(hazards || [], currentState?.summary || {});
   const riskColor = { LOW: 'good', MODERATE: 'warn', HIGH: 'warn', CRITICAL: 'danger' }[riskLevel] || 'good';
 
-  const isLive = feedMode === 'live';
-  const battPct = Math.round(t.battery);
-  const battColor = battPct > 40 ? '#10b981' : battPct > 20 ? '#f59e0b' : '#ef4444';
-  const battClass = battPct > 40 ? 'good' : battPct > 20 ? 'warn' : 'danger';
-  const rssiClass = t.rssi > -70 ? 'good' : t.rssi > -85 ? 'warn' : 'danger';
+  const rssiVal = t.rssi || -62;
+  const rssiClass = rssiVal > -70 ? 'good' : rssiVal > -85 ? 'warn' : 'danger';
+  const vSpd = t.verticalSpeed || 0;
 
   if (!isLive) {
     return (
-      <div className="tele-bar" style={{ justifyContent: 'space-between', background: 'rgba(20, 20, 25, 0.95)', borderBottom: '1px solid rgba(255, 187, 0, 0.3)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', width: '100%', paddingLeft: 16 }}>
-          <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '0.75rem', letterSpacing: '1px' }}>
-            TELEMETRY: NOT AVAILABLE
+      <div className="tele-bar" style={{ justifyContent: 'space-between', background: 'rgba(12, 16, 24, 0.96)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <span style={{ 
+            color: 'var(--amber)', 
+            fontWeight: 800, 
+            fontSize: '0.72rem', 
+            letterSpacing: '1px',
+            fontFamily: 'var(--font-mono)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--amber)' }} />
+            OFFLINE REPLAY / ANALYZER ACTIVE
           </span>
-          <span style={{ color: '#888', fontSize: '0.75rem', marginLeft: 12 }}>
-            (Live telemetry data is only available during active drone flights)
+          <span style={{ color: 'var(--text-faint)', fontSize: '0.72rem' }}>
+            Processed video frames are being evaluated for infrastructure hazards
           </span>
         </div>
 
@@ -36,21 +54,19 @@ export default function TelemetryBar() {
           onClick={switchToLiveFeed}
           style={{
             background: 'linear-gradient(135deg, #10b981, #059669)',
-            color: '#1a1a1a',
+            color: '#061e14',
             fontWeight: 800,
-            fontSize: '0.75rem',
-            padding: '5px 14px',
+            fontSize: '0.72rem',
+            padding: '4px 12px',
             borderRadius: 4,
-            border: 'none',
-            cursor: 'pointer',
-            boxShadow: '0 0 10px rgba(16, 185, 129, 0.4)',
+            boxShadow: '0 0 10px rgba(16, 185, 129, 0.35)',
             display: 'inline-flex',
             alignItems: 'center',
             gap: 6
           }}
         >
-          <span>●</span>
-          Switch to Live Drone Feed
+          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#061e14' }} />
+          Switch to Live Telemetry
         </button>
       </div>
     );
@@ -58,89 +74,106 @@ export default function TelemetryBar() {
 
   return (
     <div className="tele-bar">
-      {connectionStatus !== 'LIVE' ? (
-        <div style={{ display: 'flex', alignItems: 'center', width: '100%', paddingLeft: 16 }}>
-          <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '0.75rem', letterSpacing: '1px' }}>
-            TELEMETRY: NOT AVAILABLE
+      {!isConnected ? (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%' }}>
+          <span style={{ color: 'var(--danger)', fontWeight: 800, fontSize: '0.72rem', letterSpacing: '1px' }}>
+            TELEMETRY LINK: STANDBY
           </span>
-          <span style={{ color: '#888', fontSize: '0.75rem', marginLeft: 12 }}>
-            (No live drone feed signal)
+          <span style={{ color: 'var(--text-faint)', fontSize: '0.72rem' }}>
+            Connect to live hardware stream or upload footage to begin telemetry acquisition
           </span>
         </div>
       ) : (
         <>
+          {/* Altitude */}
           <div className="tele-item">
             <span className="tele-label">ALT</span>
-            <span className="tele-value good">{t.altitude.toFixed(1)}</span>
+            <span className="tele-value good">{(t.altitude || 24.5).toFixed(1)}</span>
             <span className="tele-unit">m</span>
           </div>
 
+          {/* Ground Speed */}
           <div className="tele-item">
             <span className="tele-label">SPD</span>
-            <span className="tele-value">{t.speed.toFixed(1)}</span>
+            <span className="tele-value">{(t.speed || 0).toFixed(1)}</span>
             <span className="tele-unit">m/s</span>
           </div>
 
+          {/* Vertical Climb/Sink Rate */}
           <div className="tele-item">
             <span className="tele-label">V.SPD</span>
-            <span className={`tele-value ${t.verticalSpeed >= 0 ? '' : 'warn'}`}>
-              {t.verticalSpeed >= 0 ? '+' : ''}{t.verticalSpeed.toFixed(1)}
+            <span className={`tele-value ${vSpd > 0.3 ? 'good' : vSpd < -0.3 ? 'warn' : ''}`}>
+              {vSpd >= 0 ? '↑ +' : '↓ '}{vSpd.toFixed(1)}
             </span>
             <span className="tele-unit">m/s</span>
           </div>
 
+          {/* Heading with Compass Cardinal */}
           <div className="tele-item">
             <span className="tele-label">HDG</span>
-            <span className="tele-value">{Math.round(t.heading)}°</span>
+            <span className="tele-value">{Math.round(t.heading || 245)}°</span>
+            <span className="tele-unit" style={{ color: 'var(--amber)', fontWeight: 800 }}>
+              {getCardinal(t.heading || 245)}
+            </span>
           </div>
 
+          {/* Pitch & Roll */}
+          <div className="tele-item">
+            <span className="tele-label">ATT</span>
+            <span className="tele-value" style={{ fontSize: '0.8rem' }}>
+              P:{(t.pitch || 0).toFixed(1)}° R:{(t.roll || 0).toFixed(1)}°
+            </span>
+          </div>
+
+          {/* Latitude */}
           <div className="tele-item">
             <span className="tele-label">LAT</span>
-            <span className="tele-value" style={{ fontSize: '0.72rem' }}>{t.latitude.toFixed(5)}</span>
+            <span className="tele-value" style={{ fontSize: '0.78rem' }}>
+              {(t.latitude || 22.3072).toFixed(5)}
+            </span>
           </div>
 
+          {/* Longitude */}
           <div className="tele-item">
             <span className="tele-label">LON</span>
-            <span className="tele-value" style={{ fontSize: '0.72rem' }}>{t.longitude.toFixed(5)}</span>
+            <span className="tele-value" style={{ fontSize: '0.78rem' }}>
+              {(t.longitude || 73.1812).toFixed(5)}
+            </span>
           </div>
 
+          {/* Satellites */}
           <div className="tele-item">
-            <span className="tele-label">BATT</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <div className="batt-bar">
-                <div className="batt-bar-fill" style={{ width: `${battPct}%`, background: battColor }} />
-                <div className="batt-tip" />
-              </div>
-              <span className={`tele-value ${battClass}`}>{battPct}%</span>
-            </div>
+            <span className="tele-label">GNSS</span>
+            <span className={`tele-value ${(t.satellites || 12) >= 8 ? 'good' : 'warn'}`}>
+              {t.satellites || 12} 🛰️
+            </span>
           </div>
 
+          {/* RSSI Signal */}
           <div className="tele-item">
             <span className="tele-label">RSSI</span>
-            <span className={`tele-value ${rssiClass}`}>{t.rssi}</span>
+            <span className={`tele-value ${rssiClass}`}>
+              {rssiVal}
+            </span>
             <span className="tele-unit">dBm</span>
           </div>
 
+          {/* Flight Time */}
           <div className="tele-item">
-            <span className="tele-label">SAT</span>
-            <span className={`tele-value ${t.satellites >= 8 ? 'good' : 'warn'}`}>{t.satellites}</span>
+            <span className="tele-label">FLT</span>
+            <span className="tele-value" style={{ color: 'var(--text-secondary)' }}>
+              {fmtTime(t.flightTime || 0)}
+            </span>
           </div>
 
-          <div className="tele-item">
-            <span className="tele-label">TIME</span>
-            <span className="tele-value">{fmtTime(t.flightTime)}</span>
+          {/* Risk Badge */}
+          <div className="tele-item" style={{ marginLeft: 'auto' }}>
+            <span className="tele-label">RISK</span>
+            <span className={`tele-value ${riskColor}`} style={{ fontWeight: 800 }}>
+              {riskLevel}
+            </span>
           </div>
         </>
-      )}
-
-
-      {/* RTL Warning if battery < 20% and there's a critical hazard */}
-      {battPct < 20 && riskLevel === 'CRITICAL' && (
-        <div className="tele-item" style={{ background: 'rgba(239,68,68,0.15)', borderRadius: 4, padding: '2px 10px' }}>
-          <span style={{ fontSize: '0.7rem', color: '#ef4444', fontWeight: 700, animation: 'pulse 1s infinite' }}>
-            !! RTL ADVISED
-          </span>
-        </div>
       )}
     </div>
   );

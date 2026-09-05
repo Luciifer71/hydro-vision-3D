@@ -21,7 +21,6 @@ export default function FlyView() {
 
   // 2. State mapped from store
   const hazards = store.hazards || [];
-  const activeFrameHazards = hazards; // Use store's latest hazards since tracking handles persistence
   const displayHazards = hazards;
   const activeHazards = displayHazards.length;
   

@@ -36,6 +36,7 @@ export default function App() {
 
   return (
     <div className="app">
+      <div className="bf-top-runner" />
       <ErrorBoundary name="Header">
         <Header />
       </ErrorBoundary>
