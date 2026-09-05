@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { useStore, CONFIG } from '../store.js';
 import EmptySessionState from '../components/EmptySessionState.jsx';
 
@@ -14,21 +14,45 @@ const CONTRACTORS = ['Unassigned', 'PWD (Municipal In-House)', 'L&T Smart Infras
 const WARDS = ['All Wards', 'Ward 1 (North Sector)', 'Ward 2 (South Sector)', 'Ward 3 (East Industrial)', 'Ward 4 (West Corridor)'];
 
 export default function MunicipalOperations() {
-  const { hazards = [], currentState, updateHazardStatus } = useStore();
-  const [selectedWard, setSelectedWard] = useState('All Wards');
+  const { hazards = [], currentState, updateHazardStatus, currentUser } = useStore();
+  const isAdmin = currentUser?.role === 'admin';
+  const isEmployee = currentUser?.role === 'employee';
+
+  const [selectedWard, setSelectedWard] = useState(isEmployee && currentUser?.ward ? currentUser.ward : 'All Wards');
   
+  useEffect(() => {
+    if (isEmployee && currentUser?.ward) {
+      setSelectedWard(currentUser.ward);
+    } else if (isAdmin) {
+      setSelectedWard('All Wards');
+    }
+  }, [currentUser?.role, currentUser?.ward, isAdmin, isEmployee]);
+
   const [assignments, setAssignments] = useState({});
   const [uploadedPhotos, setUploadedPhotos] = useState({});
 
   const weatherAlert = true;
 
   const handleAssign = (id, contractor) => {
+    if (!isAdmin) {
+      alert('Permission Denied: Contractor dispatch and budgeting requires Municipal Administrator authorization.');
+      return;
+    }
     setAssignments(prev => ({ ...prev, [id]: contractor }));
   };
 
   const handleUploadProof = (id) => {
     setUploadedPhotos(prev => ({ ...prev, [id]: true }));
-    updateHazardStatus(id, 'VERIFIED_CLOSED');
+    if (isAdmin) {
+      updateHazardStatus(id, 'VERIFIED_CLOSED', { verified_by: currentUser?.name });
+    } else {
+      updateHazardStatus(id, 'PENDING_AUDIT', { submitted_by: currentUser?.name });
+    }
+  };
+
+  const handleAdminApprove = (id) => {
+    if (!isAdmin) return;
+    updateHazardStatus(id, 'VERIFIED_CLOSED', { verified_by: currentUser?.name });
   };
 
   const handleGenerateReport = () => {
@@ -127,6 +151,41 @@ export default function MunicipalOperations() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+      {/* Role Authority Scope Notification Banner */}
+      <div 
+        style={{ 
+          background: isAdmin ? 'rgba(255, 184, 0, 0.08)' : 'rgba(0, 229, 255, 0.08)',
+          border: `1px solid ${isAdmin ? 'rgba(255, 184, 0, 0.35)' : 'rgba(0, 229, 255, 0.35)'}`,
+          padding: '8px 16px',
+          borderRadius: 'var(--radius-sm)',
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          fontFamily: 'var(--font-mono)'
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ 
+            fontSize: '0.62rem', 
+            fontWeight: 900, 
+            padding: '2px 7px', 
+            borderRadius: 3, 
+            background: isAdmin ? '#ffb800' : '#00e5ff', 
+            color: '#000' 
+          }}>
+            {isAdmin ? 'COMMISSIONER AUDIT DESK' : 'FIELD INSPECTOR DESK'}
+          </span>
+          <span style={{ fontSize: '0.72rem', color: '#fff' }}>
+            {isAdmin 
+              ? `Authorized Administrator: ${currentUser?.name} (${currentUser?.designation}) — Full authority to dispatch contractors, approve budgets & grant official sign-offs.`
+              : `Active Field Operator: ${currentUser?.name} (${currentUser?.designation}) — Upload remediation evidence photos for Commissioner audit sign-off.`}
+          </span>
+        </div>
+        <span style={{ fontSize: '0.65rem', color: isAdmin ? 'var(--amber)' : 'var(--cyan)', fontWeight: 800 }}>
+          {isAdmin ? 'ROOT LEVEL PERMISSIONS' : 'WARD REMEDIATION VIEW'}
+        </span>
+      </div>
+
       {/* Betaflight-Style Command Header Banner */}
       <div 
         style={{ 
@@ -325,8 +384,28 @@ export default function MunicipalOperations() {
                     </td>
                     <td>
                       {h.status === 'VERIFIED_CLOSED' ? (
-                        <span style={{ color: 'var(--green)', fontWeight: 800, fontSize: '0.75rem' }}>
-                          ✔ VERIFIED CLOSED
+                        <span style={{ color: 'var(--green)', fontWeight: 800, fontSize: '0.75rem', display: 'flex', alignItems: 'center', gap: 4 }}>
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="3">
+                            <polyline points="20 6 9 17 4 12" />
+                          </svg>
+                          VERIFIED CLOSED
+                        </span>
+                      ) : h.status === 'PENDING_AUDIT' ? (
+                        <span style={{ 
+                          background: 'rgba(255, 184, 0, 0.15)', 
+                          color: 'var(--amber)', 
+                          padding: '3px 8px', 
+                          borderRadius: 4, 
+                          fontSize: '0.7rem', 
+                          fontWeight: 800, 
+                          fontFamily: 'var(--font-mono)',
+                          border: '1px solid rgba(255, 184, 0, 0.4)',
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5
+                        }}>
+                          <span style={{ width: 5, height: 5, borderRadius: '50%', background: 'var(--amber)', animation: 'pulse 1s infinite' }} />
+                          PENDING AUDIT
                         </span>
                       ) : (
                         <span style={{ 
@@ -335,7 +414,7 @@ export default function MunicipalOperations() {
                           padding: '3px 8px', 
                           borderRadius: 4, 
                           fontSize: '0.72rem', 
-                          fontWeight: 800,
+                          fontWeight: 800, 
                           fontFamily: 'var(--font-mono)',
                           border: `1px solid ${h.isCriticalSLA ? 'rgba(239,68,68,0.4)' : 'rgba(255,184,0,0.3)'}`
                         }}>
@@ -355,33 +434,78 @@ export default function MunicipalOperations() {
                       <select 
                         value={h.contractor}
                         onChange={(e) => handleAssign(h.hazard_id || h.track_id, e.target.value)}
-                        disabled={h.status === 'VERIFIED_CLOSED'}
+                        disabled={!isAdmin || h.status === 'VERIFIED_CLOSED'}
                         className="form-select"
-                        style={{ padding: '4px 8px', fontSize: '0.75rem', width: 'auto' }}
+                        title={!isAdmin ? "Contractor assignment is restricted to Municipal Administrators" : "Assign municipal contractor"}
+                        style={{ 
+                          padding: '4px 8px', 
+                          fontSize: '0.75rem', 
+                          width: 'auto',
+                          opacity: !isAdmin ? 0.75 : 1,
+                          cursor: !isAdmin ? 'not-allowed' : 'pointer'
+                        }}
                       >
                         {CONTRACTORS.map(c => <option key={c} value={c}>{c}</option>)}
                       </select>
                     </td>
                     <td>
                       {h.status === 'VERIFIED_CLOSED' ? (
-                        <span style={{ color: 'var(--green)', fontSize: '0.72rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4 }}>
-                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                          Audit Passed
-                        </span>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                          <span style={{ color: 'var(--green)', fontSize: '0.72rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4 }}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                              <polyline points="20 6 9 17 4 12" />
+                            </svg>
+                            COMMISSIONER SIGN-OFF
+                          </span>
+                          <span style={{ fontSize: '0.62rem', color: 'var(--text-faint)' }}>
+                            Audit Passed · Verified
+                          </span>
+                        </div>
+                      ) : h.status === 'PENDING_AUDIT' ? (
+                        isAdmin ? (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+                            <div style={{ fontSize: '0.65rem', color: 'var(--cyan)', display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span>📸</span> Proof Submitted by Inspector
+                            </div>
+                            <button 
+                              onClick={() => handleAdminApprove(h.hazard_id || h.track_id)}
+                              className="btn btn-primary"
+                              style={{ 
+                                padding: '4px 10px', 
+                                fontSize: '0.7rem', 
+                                background: 'linear-gradient(135deg, #ffb800, #f59e0b)',
+                                color: '#000',
+                                fontWeight: 800
+                              }}
+                              title="Authorize final municipal audit and mark ticket verified"
+                            >
+                              ✔ SIGN-OFF & APPROVE
+                            </button>
+                          </div>
+                        ) : (
+                          <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+                            <span style={{ color: 'var(--amber)', fontSize: '0.72rem', fontWeight: 800, display: 'flex', alignItems: 'center', gap: 4 }}>
+                              <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--amber)', animation: 'pulse 1s infinite' }} />
+                              Awaiting Commissioner Audit
+                            </span>
+                            <span style={{ fontSize: '0.62rem', color: 'var(--text-muted)' }}>
+                              Remediation photo under review
+                            </span>
+                          </div>
+                        )
                       ) : (
                         <button 
                           onClick={() => handleUploadProof(h.hazard_id || h.track_id)} 
                           className="btn btn-outline" 
                           style={{ padding: '4px 10px', fontSize: '0.7rem' }}
+                          title={isAdmin ? "Upload proof photo and authorize closure" : "Upload field remediation evidence photo"}
                         >
                           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                             <rect x="3" y="3" width="18" height="18" rx="2" />
                             <circle cx="8.5" cy="8.5" r="1.5" />
                             <polyline points="21 15 16 10 5 21" />
                           </svg>
-                          Upload Proof Photo
+                          {isAdmin ? 'Upload & Sign-Off' : 'Upload Proof (Submit)'}
                         </button>
                       )}
                     </td>

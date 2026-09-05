@@ -38,7 +38,7 @@ from typing import Any, Dict, List, Optional
 import cv2
 import numpy as np
 import torch
-from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect, Header, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
@@ -1033,20 +1033,73 @@ def generate_mjpeg_stream():
         SESSION.write_artifacts()
 
 # ===========================================================================
+# MUNICIPAL ACCESS CONTROL & USER ROLES (RBAC)
+# ===========================================================================
+MUNICIPAL_USERS = {
+    "admin": {
+        "id": "USR-ADM-01",
+        "name": "Dr. Rajesh Rao",
+        "email": "chief.engineer@elcia.gov.in",
+        "role": "admin",
+        "designation": "Chief Municipal Engineer",
+        "department": "Smart Infrastructure & Drone Operations",
+        "ward": "All Wards",
+        "permissions": [
+            "drone:stream_control",
+            "drone:upload_video",
+            "config:modify",
+            "hazard:assign_contractor",
+            "hazard:audit_signoff",
+            "budget:approve",
+            "reports:export"
+        ]
+    },
+    "employee": {
+        "id": "USR-EMP-04",
+        "name": "Suresh Kumar",
+        "email": "suresh.inspector@elcia.gov.in",
+        "role": "employee",
+        "designation": "Ward 1 Field Operations Inspector",
+        "department": "Civic Remediation Division",
+        "ward": "Ward 1 (North Sector)",
+        "permissions": [
+            "hazard:view",
+            "hazard:upload_proof",
+            "hazard:mark_progress",
+            "reports:view"
+        ]
+    }
+}
+
+def require_admin_role(x_user_role: Optional[str] = None):
+    if x_user_role and x_user_role.strip().lower() == "employee":
+        raise HTTPException(
+            status_code=403,
+            detail="Access Denied: Municipal Commissioner / Administrator authorization required."
+        )
+
+# ===========================================================================
 # ROUTES
 # ===========================================================================
+
+@app.get("/api/auth/roles")
+def get_municipal_roles():
+    """Return available municipal deployment profiles and permissions."""
+    return {"status": "ok", "users": MUNICIPAL_USERS}
 
 @app.get("/api/config")
 def get_config():
     return CFG.get()
 
 @app.post("/api/config")
-async def set_config(patch: dict):
+async def set_config(patch: dict, x_user_role: Optional[str] = Header(None)):
+    require_admin_role(x_user_role)
     return {"status": "updated", "config": CFG.update(patch),
             "note": "Applies to the next processing run."}
 
 @app.post("/api/config/reset")
-def reset_config():
+def reset_config(x_user_role: Optional[str] = Header(None)):
+    require_admin_role(x_user_role)
     return {"status": "reset", "config": CFG.reset()}
 
 
@@ -1069,7 +1122,8 @@ def _safe_name(filename: str) -> str:
 
 
 @app.post("/api/upload-video")
-async def upload_video(file: UploadFile = File(...)):
+async def upload_video(file: UploadFile = File(...), x_user_role: Optional[str] = Header(None)):
+    require_admin_role(x_user_role)
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         return {"status": "error",
@@ -1228,17 +1282,38 @@ def get_session_hazards(session_id: str):
 
 class StatusUpdate(BaseModel):
     status: str
+    hazard_id: Optional[str] = None
+    proof_image: Optional[str] = None
+    inspector: Optional[str] = None
 
 
 @app.post("/api/hazards/{hazard_id}/status")
-async def update_hazard_status(hazard_id: str, payload: StatusUpdate):
-    if payload.status not in ("OPEN", "IN_PROGRESS", "RESOLVED"):
-        return {"status": "error", "message": "invalid status"}
-    ok = SESSION.registry.set_status(hazard_id, payload.status) if SESSION.registry else False
+@app.post("/api/hazards/status")
+async def update_hazard_status(
+    payload: StatusUpdate,
+    hazard_id: Optional[str] = None,
+    x_user_role: Optional[str] = Header(None)
+):
+    hid = hazard_id or payload.hazard_id
+    if not hid:
+        return {"status": "error", "message": "hazard_id required"}
+
+    valid_statuses = ("OPEN", "IN_PROGRESS", "PENDING_AUDIT", "RESOLVED", "VERIFIED_CLOSED")
+    if payload.status not in valid_statuses:
+        return {"status": "error", "message": f"invalid status: {payload.status}. Must be one of {valid_statuses}"}
+
+    # RBAC Enforcement: Field workers can submit proof for PENDING_AUDIT; final closure requires Admin authorization.
+    if payload.status == "VERIFIED_CLOSED" and x_user_role and x_user_role.strip().lower() == "employee":
+        raise HTTPException(
+            status_code=403,
+            detail="Forbidden: Field employees cannot unilaterally mark work orders as VERIFIED_CLOSED. Submit proof for PENDING_AUDIT for Commissioner sign-off."
+        )
+
+    ok = SESSION.registry.set_status(hid, payload.status) if SESSION.registry else False
     if ok:
         SESSION.write_artifacts()
     return {"status": "success" if ok else "not_found",
-            "hazard_id": hazard_id, "new_status": payload.status}
+            "hazard_id": hid, "new_status": payload.status}
 
 
 @app.get("/api/telemetry")

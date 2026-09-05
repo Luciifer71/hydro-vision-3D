@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store.js';
 
 // Crisp, inline tactical SVG icons matching Betaflight & aerospace GCS
@@ -106,11 +106,25 @@ const NAV = [
 export default function Sidebar() {
   const { 
     currentPage, setPage, connectionStatus, currentState, hazards, 
-    telemetry, feedMode, connect, disconnect 
+    telemetry, feedMode, connect, disconnect, currentUser
   } = useStore();
   
   const [showPortMenu, setShowPortMenu] = useState(false);
-  const [selectedPort, setSelectedPort] = useState('LIVE WS (PORT 8000)');
+  const portMenuRef = useRef(null);
+
+  const isEmployee = currentUser?.role === 'employee';
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (portMenuRef.current && !portMenuRef.current.contains(e.target)) {
+        setShowPortMenu(false);
+      }
+    };
+    if (showPortMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showPortMenu]);
 
   const detCount = hazards.length || currentState?.summary?.active_hazards || 0;
   const alertCount = hazards.filter(h => {
@@ -139,11 +153,11 @@ export default function Sidebar() {
     <aside className="sidebar">
       {/* Betaflight-Style Connect Header Slot */}
       <div className="sidebar-connect-slot">
-        <div style={{ position: 'relative' }}>
+        <div style={{ position: 'relative' }} ref={portMenuRef}>
           <button 
             className={`bf-connect-btn ${isConnected ? 'connected' : ''}`}
             onClick={handleConnectToggle}
-            title={isConnected ? 'Click to Disconnect' : 'Click to Connect to Live Drone Stream'}
+            title={isConnected ? 'Click to Disconnect Stream' : 'Click to Connect to Live Drone Stream (Port 8000)'}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -157,7 +171,7 @@ export default function Sidebar() {
                 e.stopPropagation();
                 setShowPortMenu(!showPortMenu);
               }}
-              title="Select Communications Port"
+              title="Select Communications Port or Terminate Stream"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <polyline points="6 9 12 15 18 9" />
@@ -165,7 +179,7 @@ export default function Sidebar() {
             </div>
           </button>
 
-          {/* Port Dropdown Menu */}
+          {/* Port Dropdown Menu with ONLY Connect and Disconnect Options */}
           {showPortMenu && (
             <div 
               style={{
@@ -177,50 +191,103 @@ export default function Sidebar() {
                 background: 'rgba(18, 24, 36, 0.98)',
                 border: '1px solid var(--border-medium)',
                 borderRadius: 'var(--radius-sm)',
-                boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
+                boxShadow: '0 8px 24px rgba(0,0,0,0.85)',
                 zIndex: 200,
-                padding: '4px',
+                padding: '6px',
                 fontFamily: 'var(--font-mono)',
-                fontSize: '0.72rem'
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 5
               }}
             >
-              {[
-                'LIVE WS (PORT 8000)',
-                '/dev/ttyUSB0 (115200)',
-                'MAVLINK UDP (14550)',
-                'SIMULATOR (VIRTUAL)'
-              ].map(port => (
-                <div
-                  key={port}
-                  onClick={() => {
-                    setSelectedPort(port);
-                    setShowPortMenu(false);
-                  }}
-                  style={{
-                    padding: '6px 10px',
-                    borderRadius: 4,
-                    cursor: 'pointer',
-                    color: selectedPort === port ? 'var(--amber)' : '#cbd5e1',
-                    background: selectedPort === port ? 'rgba(255,184,0,0.12)' : 'transparent'
-                  }}
-                >
-                  {port}
+              {/* Option 1: Connect */}
+              <div
+                onClick={() => {
+                  setShowPortMenu(false);
+                  connect();
+                }}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  color: '#10b981',
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid rgba(16, 185, 129, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Connect to Drone Video Stream"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <polygon points="5 3 19 12 5 21 5 3" fill="#10b981" />
+                  </svg>
+                  <span style={{ fontWeight: 800, fontSize: '0.78rem' }}>Connect</span>
                 </div>
-              ))}
+                {isConnected && (
+                  <span style={{ fontSize: '0.58rem', color: '#10b981', fontWeight: 800, background: 'rgba(16,185,129,0.2)', padding: '2px 6px', borderRadius: 3 }}>
+                    ACTIVE
+                  </span>
+                )}
+              </div>
+
+              {/* Option 2: Disconnect */}
+              <div
+                onClick={() => {
+                  setShowPortMenu(false);
+                  disconnect();
+                }}
+                style={{
+                  padding: '8px 12px',
+                  borderRadius: 4,
+                  cursor: 'pointer',
+                  color: '#ef4444',
+                  background: 'rgba(239, 68, 68, 0.12)',
+                  border: '1px solid rgba(239, 68, 68, 0.3)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'space-between',
+                  transition: 'all 0.15s ease'
+                }}
+                title="Disconnect & Terminate Session"
+              >
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <rect x="5" y="5" width="14" height="14" rx="2" fill="#ef4444" />
+                  </svg>
+                  <span style={{ fontWeight: 800, fontSize: '0.78rem' }}>Disconnect</span>
+                </div>
+                {!isConnected && (
+                  <span style={{ fontSize: '0.58rem', color: '#ef4444', fontWeight: 800, background: 'rgba(239,68,68,0.2)', padding: '2px 6px', borderRadius: 3 }}>
+                    OFFLINE
+                  </span>
+                )}
+              </div>
             </div>
           )}
         </div>
 
-        {/* Selected Port Subtext */}
+        {/* Status & Municipal Scope Subtext */}
         <div style={{ 
           marginTop: 6, 
           fontSize: '0.62rem', 
           fontFamily: 'var(--font-mono)', 
           color: 'var(--text-faint)', 
-          textAlign: 'center', 
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+          padding: '0 2px',
           letterSpacing: 0.5 
         }}>
-          LINK: {selectedPort}
+          <span>LINK: <strong style={{ color: isConnected ? 'var(--green)' : 'var(--text-muted)' }}>{connectionStatus}</strong></span>
+          <span style={{ 
+            color: isEmployee ? 'var(--cyan)' : 'var(--amber)',
+            fontWeight: 800
+          }}>
+            {isEmployee ? 'FIELD WORKER' : 'ROOT ADMIN'}
+          </span>
         </div>
       </div>
 
@@ -230,17 +297,34 @@ export default function Sidebar() {
           if (item.section) return <div key={i} className="nav-section">{item.section}</div>;
           const count = item.badge ? getBadgeCount(item.badge) : 0;
           const isActive = currentPage === item.id;
+          const isRestricted = isEmployee && ['dashboard', 'stream', 'risk', 'volumetric', 'depth'].includes(item.id);
+
           return (
             <div
               key={item.id}
               className={`nav-item ${isActive ? 'active' : ''}`}
               onClick={() => setPage(item.id)}
+              style={isRestricted ? { opacity: 0.65 } : {}}
             >
               <span className="nav-icon">
                 <NavIcon type={item.icon} />
               </span>
               <span>{item.label}</span>
-              {count > 0 && <span className="nav-badge">{count}</span>}
+              {isRestricted && (
+                <span style={{ 
+                  marginLeft: 'auto', 
+                  fontSize: '0.54rem', 
+                  color: '#ef4444', 
+                  fontWeight: 800,
+                  background: 'rgba(239,68,68,0.15)',
+                  border: '1px solid rgba(239,68,68,0.3)',
+                  padding: '1px 5px',
+                  borderRadius: 3
+                }}>
+                  🔒 LOCKED
+                </span>
+              )}
+              {count > 0 && !isRestricted && <span className="nav-badge">{count}</span>}
             </div>
           );
         })}

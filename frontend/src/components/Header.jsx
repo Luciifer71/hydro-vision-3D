@@ -56,17 +56,34 @@ function SensorAnnunciator({ label, active }) {
 export default function Header() {
   const { 
     currentPage, viewMode, setViewMode, connectionStatus, 
-    telemetry, connect, uploadVideo, feedMode, switchToLiveFeed 
+    telemetry, uploadVideo, feedMode, switchToLiveFeed,
+    currentUser, switchUserRole 
   } = useStore();
   
   const [time, setTime] = useState(new Date());
   const [isProcessing, setIsProcessing] = useState(false);
+  const [showUserMenu, setShowUserMenu] = useState(false);
   const fileInputRef = useRef(null);
+  const userMenuRef = useRef(null);
+
+  const isAdmin = currentUser?.role === 'admin';
 
   useEffect(() => {
     const t = setInterval(() => setTime(new Date()), 1000);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (userMenuRef.current && !userMenuRef.current.contains(e.target)) {
+        setShowUserMenu(false);
+      }
+    };
+    if (showUserMenu) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [showUserMenu]);
 
   const isDashboard = currentPage === 'dashboard';
   const isLive = feedMode === 'live';
@@ -87,12 +104,19 @@ export default function Header() {
     try {
       const response = await fetch('/api/upload-video', {
         method: 'POST',
+        headers: {
+          'X-User-Role': currentUser?.role || 'admin'
+        },
         body: formData,
       });
 
+      if (response.status === 403) {
+        alert('Access Denied: Municipal Administrator authorization is required to ingest raw drone video.');
+        return;
+      }
+
       if (response.ok) {
         uploadVideo(file);
-        connect(); 
       } else {
         console.error('[ERROR] Backend rejected video file.');
       }
@@ -109,12 +133,6 @@ export default function Header() {
       <div className="header-left">
         {/* Betaflight-Style Tactical Brand */}
         <div className="header-brand">
-          <div className="header-brand-logo">
-            <svg width="26" height="26" viewBox="0 0 24 24" fill="none">
-              <polygon points="12 2 15 8 22 9 17 14 18 21 12 17 6 21 7 14 2 9 9 8 12 2" fill="none" stroke="#ffb800" strokeWidth="2" strokeLinejoin="round" />
-              <circle cx="12" cy="12" r="3" fill="#ffb800" />
-            </svg>
-          </div>
           <div>
             <div className="header-brand-title">
               HYDRO-VISION <span style={{ color: '#fff', fontSize: '0.72rem', opacity: 0.8 }}>// 3D</span>
@@ -126,7 +144,7 @@ export default function Header() {
         </div>
 
         {/* Fly / Analyze Segmented View Switcher */}
-        {isDashboard && (
+        {isDashboard && isAdmin && (
           <div className="view-switcher" style={{ marginLeft: 10 }}>
             <button 
               className={`view-btn ${viewMode === 'fly' ? 'active' : ''}`} 
@@ -200,7 +218,7 @@ export default function Header() {
         </div>
 
         {/* Feed Mode Indicator / Switcher */}
-        {currentPage !== 'municipal' && (
+        {isAdmin && currentPage !== 'municipal' && (
           <>
             {!isLive ? (
               <button
@@ -239,7 +257,7 @@ export default function Header() {
               </div>
             )}
 
-            {/* Video File Upload */}
+            {/* Video File Upload (Admin Privilege Enforced) */}
             <input
               type="file"
               ref={fileInputRef}
@@ -250,15 +268,23 @@ export default function Header() {
             
             <button
               className="btn btn-outline"
-              onClick={() => fileInputRef.current?.click()}
+              onClick={() => {
+                if (!isAdmin) {
+                  alert('Permission Denied: Video file ingestion is restricted to Municipal Administrators.');
+                  return;
+                }
+                fileInputRef.current?.click();
+              }}
               disabled={isProcessing}
-              title="Upload an inspection video for AI hazard extraction"
+              title={isAdmin ? "Upload an inspection video for AI hazard extraction" : "Upload restricted to Municipal Administrator"}
               style={{
-                borderColor: 'var(--amber)',
-                color: 'var(--amber)',
-                background: 'rgba(255, 184, 0, 0.08)',
+                borderColor: isAdmin ? 'var(--amber)' : 'var(--border-subtle)',
+                color: isAdmin ? 'var(--amber)' : 'var(--text-faint)',
+                background: isAdmin ? 'rgba(255, 184, 0, 0.08)' : 'rgba(255, 255, 255, 0.02)',
                 padding: '4px 12px',
-                fontSize: '0.72rem'
+                fontSize: '0.72rem',
+                opacity: isAdmin ? 1 : 0.6,
+                cursor: isAdmin ? 'pointer' : 'not-allowed'
               }}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
@@ -266,10 +292,168 @@ export default function Header() {
                 <polyline points="17 8 12 3 7 8" />
                 <line x1="12" y1="3" x2="12" y2="15" />
               </svg>
-              {isProcessing ? 'Analyzing...' : 'Upload Video'}
+              {isProcessing ? 'Analyzing...' : !isAdmin ? 'Upload (Admin)' : 'Upload Video'}
             </button>
           </>
         )}
+
+        {/* Municipal User Identity & Access Switcher Widget */}
+        <div style={{ position: 'relative' }} ref={userMenuRef}>
+          <div 
+            onClick={() => setShowUserMenu(!showUserMenu)}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              padding: '3px 10px',
+              borderRadius: 'var(--radius-sm)',
+              background: isAdmin ? 'rgba(255, 184, 0, 0.08)' : 'rgba(0, 229, 255, 0.08)',
+              border: `1px solid ${isAdmin ? 'rgba(255, 184, 0, 0.4)' : 'rgba(0, 229, 255, 0.4)'}`,
+              cursor: 'pointer',
+              transition: 'all 0.2s ease',
+              boxShadow: isAdmin ? '0 0 10px rgba(255, 184, 0, 0.15)' : '0 0 10px rgba(0, 229, 255, 0.15)'
+            }}
+            title="Click to Switch Municipal Access Role (Admin vs Field Inspector)"
+          >
+            {/* Avatar Pill */}
+            <div style={{
+              width: 22,
+              height: 22,
+              borderRadius: '50%',
+              background: isAdmin ? 'linear-gradient(135deg, #ffb800, #d97706)' : 'linear-gradient(135deg, #00e5ff, #0284c7)',
+              color: '#06080c',
+              fontWeight: 900,
+              fontSize: '0.62rem',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontFamily: 'var(--font-mono)'
+            }}>
+              {currentUser?.avatar || 'U'}
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start' }}>
+              <span style={{ 
+                fontSize: '0.68rem', 
+                fontWeight: 900, 
+                color: isAdmin ? '#ffb800' : '#00e5ff',
+                lineHeight: 1.1,
+                letterSpacing: 0.5
+              }}>
+                {isAdmin ? 'COMMISSIONER (ADMIN)' : 'FIELD INSPECTOR'}
+              </span>
+              <span style={{ fontSize: '0.58rem', color: 'var(--text-faint)', lineHeight: 1.1 }}>
+                {currentUser?.name?.split(' ')?.[0] || 'User'} · {isAdmin ? 'FULL ACCESS' : 'RESTRICTED'}
+              </span>
+            </div>
+
+            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ color: 'var(--text-muted)' }}>
+              <polyline points="6 9 12 15 18 9" />
+            </svg>
+          </div>
+
+          {/* Role Switcher Popover */}
+          {showUserMenu && (
+            <div
+              style={{
+                position: 'absolute',
+                top: 'calc(100% + 8px)',
+                right: 0,
+                width: 290,
+                background: 'rgba(10, 14, 22, 0.98)',
+                backdropFilter: 'blur(20px)',
+                WebkitBackdropFilter: 'blur(20px)',
+                border: '1px solid var(--border-medium)',
+                borderRadius: 'var(--radius-md)',
+                boxShadow: '0 12px 32px rgba(0,0,0,0.85)',
+                zIndex: 300,
+                padding: '14px',
+                fontFamily: 'var(--font-mono)'
+              }}
+            >
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border-subtle)', paddingBottom: 8, marginBottom: 10 }}>
+                <span style={{ fontSize: '0.68rem', fontWeight: 800, color: 'var(--amber)', letterSpacing: 0.8 }}>
+                  MUNICIPAL ACCESS PROFILE
+                </span>
+                <span style={{ 
+                  fontSize: '0.58rem', 
+                  fontWeight: 900, 
+                  padding: '2px 6px', 
+                  borderRadius: 3,
+                  background: isAdmin ? 'rgba(255,184,0,0.15)' : 'rgba(0,229,255,0.15)',
+                  color: isAdmin ? '#ffb800' : '#00e5ff'
+                }}>
+                  {isAdmin ? 'ROOT ADMIN' : 'EMPLOYEE'}
+                </span>
+              </div>
+
+              {/* Active User Details */}
+              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid var(--border-subtle)', borderRadius: 4, padding: '8px 10px', marginBottom: 12 }}>
+                <div style={{ fontSize: '0.85rem', fontWeight: 800, color: '#fff' }}>
+                  {currentUser?.name}
+                </div>
+                <div style={{ fontSize: '0.68rem', color: 'var(--text-muted)', marginTop: 2 }}>
+                  {currentUser?.designation}
+                </div>
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-faint)', marginTop: 2 }}>
+                  {currentUser?.department}
+                </div>
+                <div style={{ fontSize: '0.62rem', color: 'var(--text-faint)', marginTop: 1 }}>
+                  Jurisdiction: <span style={{ color: 'var(--text-primary)', fontWeight: 700 }}>{currentUser?.ward}</span>
+                </div>
+              </div>
+
+              {/* Permissions scope */}
+              <div style={{ fontSize: '0.62rem', color: 'var(--text-faint)', marginBottom: 12 }}>
+                <div style={{ fontWeight: 800, color: 'var(--text-muted)', marginBottom: 5 }}>ACTIVE PERMISSIONS:</div>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+                  {isAdmin ? (
+                    <>
+                      <span className="badge-perm good">✔ Drone Stream Control</span>
+                      <span className="badge-perm good">✔ Sensor Calibration</span>
+                      <span className="badge-perm good">✔ Contractor Dispatch</span>
+                      <span className="badge-perm good">✔ Final Audit Sign-Off</span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="badge-perm cyan">✔ View Assigned Tickets</span>
+                      <span className="badge-perm cyan">✔ Upload Proof Photos</span>
+                      <span className="badge-perm warn">✖ Calibration Locked</span>
+                      <span className="badge-perm warn">✖ Dispatch Locked</span>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Quick Role Switcher Buttons */}
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 10 }}>
+                <button
+                  className="btn btn-outline"
+                  onClick={() => {
+                    switchUserRole(isAdmin ? 'employee' : 'admin');
+                    setShowUserMenu(false);
+                  }}
+                  style={{
+                    width: '100%',
+                    justifyContent: 'center',
+                    fontSize: '0.72rem',
+                    padding: '8px 12px',
+                    borderColor: isAdmin ? '#00e5ff' : 'var(--amber)',
+                    color: isAdmin ? '#00e5ff' : 'var(--amber)',
+                    background: isAdmin ? 'rgba(0, 229, 255, 0.08)' : 'rgba(255, 184, 0, 0.08)'
+                  }}
+                >
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                    <path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+                    <circle cx="8.5" cy="7" r="4" />
+                    <polyline points="17 11 19 13 23 9" />
+                  </svg>
+                  {isAdmin ? 'Switch to Field Inspector Account' : 'Switch to Municipal Admin Account'}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </header>
   );

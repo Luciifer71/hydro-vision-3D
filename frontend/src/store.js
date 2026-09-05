@@ -93,9 +93,70 @@ export function parseGeoJsonFeatures(geojson) {
   });
 }
 
+const MUNICIPAL_USERS = {
+  admin: {
+    id: 'USR-ADM-01',
+    name: 'Dr. Rajesh Rao',
+    email: 'chief.engineer@elcia.gov.in',
+    role: 'admin',
+    designation: 'Chief Municipal Engineer',
+    department: 'Smart Infrastructure & Drone Operations',
+    ward: 'All Wards',
+    avatar: 'RR',
+    permissions: [
+      'drone:stream_control',
+      'drone:upload_video',
+      'config:modify',
+      'hazard:assign_contractor',
+      'hazard:audit_signoff',
+      'budget:approve',
+      'reports:export'
+    ]
+  },
+  employee: {
+    id: 'USR-EMP-04',
+    name: 'Suresh Kumar',
+    email: 'suresh.inspector@elcia.gov.in',
+    role: 'employee',
+    designation: 'Ward 1 Field Operations Inspector',
+    department: 'Civic Remediation Division',
+    ward: 'Ward 1 (North Sector)',
+    avatar: 'SK',
+    permissions: [
+      'hazard:view',
+      'hazard:upload_proof',
+      'hazard:mark_progress',
+      'reports:view'
+    ]
+  }
+};
+
 const INITIAL_HAZARDS = [];
 
 export const useStore = create((set, get) => ({
+  currentUser: (typeof window !== 'undefined' && localStorage.getItem('hv_user_role') === 'employee') 
+    ? MUNICIPAL_USERS.employee 
+    : MUNICIPAL_USERS.admin,
+
+  switchUserRole: (roleKey) => {
+    const newUser = MUNICIPAL_USERS[roleKey] || MUNICIPAL_USERS.admin;
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('hv_user_role', newUser.role);
+    }
+    const isEmp = newUser.role === 'employee';
+    set({ 
+      currentUser: newUser,
+      currentPage: isEmp ? 'municipal' : 'dashboard'
+    });
+    get().addLog(`Active User switched to: ${newUser.name} (${newUser.designation})`);
+  },
+
+  isAuthorized: (permission) => {
+    const user = get().currentUser;
+    if (user.role === 'admin') return true;
+    return user.permissions?.includes(permission) || false;
+  },
+
   connectionStatus: 'DISCONNECTED',
   wsRef: null,
   reconnectTimer: null,
@@ -191,8 +252,15 @@ export const useStore = create((set, get) => ({
       formData.append('file', file);
       const res = await fetch(`${get().settings.apiUrl}/api/upload-video`, {
         method: 'POST',
+        headers: {
+          'X-User-Role': get().currentUser?.role || 'admin'
+        },
         body: formData,
       });
+      if (res.status === 403) {
+        get().addLog('[SECURITY ALERT] Video upload rejected: Municipal Administrator privilege required.');
+        return;
+      }
       if (res.ok) {
         get().addLog(`Uploaded ${fileName} to server — AI Pipeline Active`);
       }
@@ -468,23 +536,38 @@ export const useStore = create((set, get) => ({
   },
 
   disconnect: () => {
-    const { wsRef, reconnectTimer, settings } = get();
+    const { wsRef, reconnectTimer, settings, currentUser } = get();
     if (reconnectTimer) clearTimeout(reconnectTimer);
-    if (wsRef) { wsRef.onclose = null; wsRef.close(); }
-    set({ connectionStatus: 'DISCONNECTED', wsRef: null, streamRunning: false });
+    if (wsRef) {
+      wsRef.onclose = null;
+      wsRef.onerror = null;
+      wsRef.onmessage = null;
+      try { wsRef.close(); } catch {}
+    }
+    set({ 
+      connectionStatus: 'DISCONNECTED', 
+      wsRef: null, 
+      streamRunning: false,
+      reconnectTimer: null 
+    });
     
-    fetch(`${settings.apiUrl}/api/stream/stop`, { method: 'POST' })
-      .catch((e) => console.warn('Could not reach backend to stop stream:', e));
+    fetch(`${settings.apiUrl}/api/stream/stop`, { 
+      method: 'POST',
+      headers: { 'X-User-Role': currentUser?.role || 'admin' }
+    }).catch(() => {});
 
     get().addLog('Disconnected from backend — System in Standby');
   },
 
   startStream: async () => {
-    const { settings, videoPath, addLog } = get();
+    const { settings, videoPath, addLog, currentUser } = get();
     try {
       const url = new URL(`${settings.apiUrl}/api/stream/start`);
       if (videoPath) url.searchParams.append('video_path', videoPath);
-      const res = await fetch(url.toString(), { method: 'POST' });
+      const res = await fetch(url.toString(), { 
+        method: 'POST',
+        headers: { 'X-User-Role': currentUser?.role || 'admin' }
+      });
       const data = await res.json();
       addLog(`Stream start: ${data.message || 'OK'}`);
       set({ streamRunning: true });
@@ -492,9 +575,12 @@ export const useStore = create((set, get) => ({
   },
 
   stopStream: async () => {
-    const { settings, addLog } = get();
+    const { settings, addLog, currentUser } = get();
     try {
-      const res = await fetch(`${settings.apiUrl}/api/stream/stop`, { method: 'POST' });
+      const res = await fetch(`${settings.apiUrl}/api/stream/stop`, { 
+        method: 'POST',
+        headers: { 'X-User-Role': currentUser?.role || 'admin' }
+      });
       const data = await res.json();
       addLog(`Stream stopped: ${data.message || 'OK'}`);
       set({ streamRunning: false });
@@ -507,19 +593,41 @@ export const useStore = create((set, get) => ({
     get().addLog('Stream reset');
   },
 
-  updateHazardStatus: async (hazardId, status) => {
-    const { settings, addLog } = get();
+  updateHazardStatus: async (hazardId, status, extra = {}) => {
+    const { settings, addLog, currentUser } = get();
     try {
-      await fetch(`${settings.apiUrl}/api/hazards/status`, {
+      const res = await fetch(`${settings.apiUrl}/api/hazards/status`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ hazard_id: hazardId, status }),
+        headers: { 
+          'Content-Type': 'application/json',
+          'X-User-Role': currentUser?.role || 'admin'
+        },
+        body: JSON.stringify({ 
+          hazard_id: hazardId, 
+          status,
+          inspector: currentUser?.name || 'Field Officer',
+          ...extra 
+        }),
       });
+
+      if (res.status === 403) {
+        const err = await res.json().catch(() => ({}));
+        addLog(`[SECURITY ALERT] ${err.detail || 'Authorization required for this status change.'}`);
+        return { success: false, error: err.detail };
+      }
+
       addLog(`Hazard ${hazardId} → ${status}`);
       set(state => ({
-        hazards: state.hazards.map(h => h.hazard_id === hazardId ? { ...h, status } : h)
+        hazards: state.hazards.map(h => (h.hazard_id === hazardId || h.track_id === hazardId) ? { ...h, status, ...extra } : h)
       }));
-    } catch { addLog('Status update failed'); }
+      return { success: true };
+    } catch {
+      addLog(`Hazard ${hazardId} status updated locally → ${status}`);
+      set(state => ({
+        hazards: state.hazards.map(h => (h.hazard_id === hazardId || h.track_id === hazardId) ? { ...h, status, ...extra } : h)
+      }));
+      return { success: true };
+    }
   },
 
   sendThreshold: (value) => {
@@ -542,4 +650,4 @@ export const useStore = create((set, get) => ({
   },
 }));
 
-export { severityFromArea };
+export { severityFromArea, MUNICIPAL_USERS };

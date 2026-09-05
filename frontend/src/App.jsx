@@ -12,11 +12,21 @@ import AreaAnalyticsPage from './pages/AreaAnalyticsPage.jsx';
 import DepthPage from './pages/DepthPage.jsx';
 import StreamPage from './pages/StreamPage.jsx';
 import MunicipalOperations from './Additional_Features/MunicipalOperations.jsx';
+import RestrictedAccessView from './components/RestrictedAccessView.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import './index.css';
 
+const ADMIN_ONLY_PAGES = {
+  dashboard: 'Avionics & Sensor Calibration Setup',
+  stream: 'Raw Video Feed & Stream Ingestion Control',
+  risk: 'AI Risk Engine & Mathematical Weight Tuning',
+  volumetric: 'Volumetric Photogrammetric Model Calibration',
+  depth: 'Monocular Depth Sensor Matrix Tuning'
+};
+
 export default function App() {
-  const { connect, currentPage } = useStore();
+  const { connect, currentPage, currentUser } = useStore();
+  const isEmployee = currentUser?.role === 'employee';
 
   useEffect(() => {
     connect();
@@ -36,7 +46,6 @@ export default function App() {
 
   return (
     <div className="app">
-      <div className="bf-top-runner" />
       <ErrorBoundary name="Header">
         <Header />
       </ErrorBoundary>
@@ -45,19 +54,26 @@ export default function App() {
           <Sidebar />
         </ErrorBoundary>
         <div className="main">
-          {currentPage !== 'municipal' && (
+          {currentPage !== 'municipal' && !isEmployee && (
             <ErrorBoundary name="Telemetry Bar">
               <TelemetryBar />
             </ErrorBoundary>
           )}
           <div className="content">
-            {Object.entries(pages).map(([key, component]) => (
-              <div key={key} className={`page ${currentPage === key ? 'active' : ''}`}>
-                <ErrorBoundary name={`Page (${key})`}>
-                  {component}
-                </ErrorBoundary>
-              </div>
-            ))}
+            {Object.entries(pages).map(([key, component]) => {
+              const isRestrictedForUser = isEmployee && Boolean(ADMIN_ONLY_PAGES[key]);
+              return (
+                <div key={key} className={`page ${currentPage === key ? 'active' : ''}`}>
+                  <ErrorBoundary name={`Page (${key})`}>
+                    {isRestrictedForUser ? (
+                      <RestrictedAccessView moduleName={ADMIN_ONLY_PAGES[key]} />
+                    ) : (
+                      component
+                    )}
+                  </ErrorBoundary>
+                </div>
+              );
+            })}
           </div>
         </div>
       </div>
