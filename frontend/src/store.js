@@ -105,6 +105,7 @@ export const useStore = create((set, get) => ({
   hazards: INITIAL_HAZARDS,
   timelineHistory: [],
   riskHistory: [],
+  lastSupabaseSync: 0,
   alertFilter: 'all',
   detectionSearch: '',
   detectionTypeFilter: 'all',
@@ -119,7 +120,7 @@ export const useStore = create((set, get) => ({
 
   viewMode: 'fly',
   feedMode: 'live',
-  currentPage: 'dashboard',
+  currentPage: typeof window !== 'undefined' && window.location.pathname.length > 1 ? window.location.pathname.replace('/', '') : 'dashboard',
   streamRunning: false,
   videoPath: '/sample-drone.mp4',
 
@@ -135,7 +136,10 @@ export const useStore = create((set, get) => ({
     dataSource: 'live',
   },
 
-  setPage: (page) => set({ currentPage: page }),
+  setPage: (page) => {
+    if (typeof window !== 'undefined') window.history.pushState({}, '', `/${page}`);
+    set({ currentPage: page });
+  },
   setViewMode: (mode) => set({ viewMode: mode }),
   setFeedMode: (mode) => set({ feedMode: mode }),
   setAlertFilter: (filter) => set({ alertFilter: filter }),
@@ -269,6 +273,16 @@ export const useStore = create((set, get) => ({
         riskHistory: [...state.riskHistory, { time: now, score: ({ LOW: 25, MODERATE: 50, HIGH: 75, CRITICAL: 100 }[riskLevel] || 25) }].slice(-CONFIG.CHART_HISTORY),
       };
     });
+
+    // Background Auto-Sync logic (debounced to 5 seconds)
+    const state = get();
+    if (state.streamRunning) {
+      const nowMs = Date.now();
+      if (nowMs - state.lastSupabaseSync > 5000) {
+        set({ lastSupabaseSync: nowMs });
+        get().syncHazardsToSupabase();
+      }
+    }
   },
 
   updateLocalVideoFrame: (frameInfo) => {

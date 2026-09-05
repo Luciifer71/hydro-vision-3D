@@ -37,8 +37,9 @@ import cv2
 import numpy as np
 import torch
 from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect
+from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from frontend.Backend_for_VideoDownload.video_recorder import recorder
 from PIL import Image
 from pydantic import BaseModel
 from ultralytics import YOLO
@@ -946,6 +947,9 @@ def generate_mjpeg_stream():
                     SESSION.stage_status["artifact"] = f"failed: {type(e).__name__}"
                     writer.release(); writer = None
 
+            # ---------------- STANDALONE RECORDER ----------------
+            recorder.write_frame(annotated)
+
             elapsed = max(1e-6, time.time() - t_start)
             SESSION.achieved_fps = SESSION.frame_count / elapsed
 
@@ -1109,6 +1113,27 @@ async def update_hazard_status(hazard_id: str, payload: StatusUpdate):
 @app.get("/api/telemetry")
 def get_telemetry():
     return {"status": "active", "detections": SESSION.hazards()}
+
+
+# --------------------------- STANDALONE ON-DEMAND RECORDER ---------------------------
+
+@app.get("/api/record/start")
+def start_on_demand_recording():
+    # Uses the current stream's resolution and FPS
+    fps = SESSION.fps if SESSION.fps and SESSION.fps > 0 else 30.0
+    w = SESSION.width if SESSION.width and SESSION.width > 0 else 1920
+    h = SESSION.height if SESSION.height and SESSION.height > 0 else 1080
+    return recorder.start_recording(fps=fps, width=w, height=h)
+
+@app.get("/api/record/stop")
+def stop_on_demand_recording():
+    return recorder.stop_recording()
+
+@app.get("/api/record/download")
+def download_on_demand_recording():
+    if recorder.current_filepath and Path(recorder.current_filepath).exists():
+        return FileResponse(recorder.current_filepath, media_type="video/mp4", filename=recorder.current_filename)
+    return {"error": "No recent recording found"}
 
 
 @app.get("/health")

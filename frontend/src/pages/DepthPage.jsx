@@ -3,6 +3,7 @@ import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { useStore } from '../store.js';
 import EmptySessionState from '../components/EmptySessionState.jsx';
+import ErrorBoundary from '../components/ErrorBoundary.jsx';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend);
 
@@ -11,8 +12,6 @@ ChartJS.defaults.animation.duration = 0;
 
 export default function DepthPage() {
   const { hazards = [], currentState } = useStore();
-
-  if (!currentState) return <EmptySessionState message="No Depth Analysis Available" />;
 
   const metrics = useMemo(() => {
     let totalArea = 0;
@@ -23,7 +22,7 @@ export default function DepthPage() {
     const list = hazards.map((h, i) => {
       const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : null;
       const depthIndex = h.relative_depth_index != null ? Number(h.relative_depth_index) : null;
-      
+
       if (area != null) totalArea += area;
       if (depthIndex != null) {
         if (depthIndex > maxDepthIndex) maxDepthIndex = depthIndex;
@@ -45,6 +44,8 @@ export default function DepthPage() {
     const avgDepthIndex = depthCount > 0 ? depthSum / depthCount : 0;
     return { list, totalArea, maxDepthIndex, avgDepthIndex };
   }, [hazards]);
+
+  if (!currentState) return <EmptySessionState message="No Depth Analysis Available" />;
 
   const chartSlice = metrics.list.slice(0, 12);
   const chartData = {
@@ -144,7 +145,9 @@ export default function DepthPage() {
         </div>
         <div className="card-body">
           <div className="chart-wrap" style={{ height: 220 }}>
-            <Bar data={chartData} options={chartOptions} />
+            <ErrorBoundary name="Depth Estimation Bar Chart">
+              <Bar data={chartData} options={chartOptions} />
+            </ErrorBoundary>
           </div>
         </div>
       </div>

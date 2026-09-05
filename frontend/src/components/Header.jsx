@@ -192,94 +192,98 @@ export default function Header() {
           {time.toLocaleTimeString('en-US', { hour12: false })}
         </div>
 
-        {/* Feed Mode Controls */}
-        {!isLive ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-            <div style={{
-              display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', 
-              borderRadius: 4, background: 'rgba(255, 187, 0, 0.12)', border: '1px solid rgba(255, 187, 0, 0.3)', 
-              color: '#ffbb00', fontSize: '0.68rem', fontWeight: 800
-            }}>
-              <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ffbb00', display: 'inline-block' }} />
-              VIDEO PROCESSING
+        {currentPage !== 'municipal' && (
+          <>
+            {/* Feed Mode Controls */}
+            {!isLive ? (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                <div style={{
+                  display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', 
+                  borderRadius: 4, background: 'rgba(255, 187, 0, 0.12)', border: '1px solid rgba(255, 187, 0, 0.3)', 
+                  color: '#ffbb00', fontSize: '0.68rem', fontWeight: 800
+                }}>
+                  <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ffbb00', display: 'inline-block' }} />
+                  VIDEO PROCESSING
+                </div>
+                <button
+                  className="btn"
+                  onClick={switchToLiveFeed}
+                  title="Return to real-time live drone flight feed and restore telemetry"
+                  style={{
+                    background: 'transparent', color: '#10b981',
+                    fontWeight: 800, padding: '4px 12px', fontSize: '0.72rem', borderRadius: 4,
+                    cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
+                    border: '1px solid #10b981',
+                  }}
+                >
+                  <span>●</span>
+                  Switch to Live Feed
+                </button>
+              </div>
+            ) : (
+              <div style={{
+                display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', 
+                borderRadius: 4, background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', 
+                color: '#10b981', fontSize: '0.68rem', fontWeight: 800
+              }}>
+                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
+                LIVE DRONE FEED
+              </div>
+            )}
+
+            <div className={`conn-badge ${connectionStatus.toLowerCase()}`}>
+              {connectionStatus === 'LIVE' ? '● LIVE' : connectionStatus === 'CONNECTING' ? '◌ CONNECTING' : connectionStatus === 'RECONNECTING' ? '↻ RECONNECTING' : '○ OFFLINE'}
             </div>
+
+            {/* Hidden File Input */}
+            <input
+              type="file"
+              ref={fileInputRef}
+              accept="video/mp4"
+              style={{ display: 'none' }}
+              onChange={handleVideoUpload}
+            />
+
+            {/* Upload Video Button */}
             <button
-              className="btn"
-              onClick={switchToLiveFeed}
-              title="Return to real-time live drone flight feed and restore telemetry"
+              className="btn btn-outline"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={isProcessing}
+              title="Upload a pre-recorded drone flight video for AI analysis"
               style={{
-                background: 'transparent', color: '#10b981',
-                fontWeight: 800, padding: '4px 12px', fontSize: '0.72rem', borderRadius: 4,
-                cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 6,
-                border: '1px solid #10b981',
+                background: 'rgba(255,187,0,0.12)', border: '1px solid var(--amber)', color: 'var(--amber)',
+                padding: '4px 12px', fontSize: '0.72rem', fontWeight: 700, borderRadius: 4, cursor: isProcessing ? 'not-allowed' : 'pointer',
+                display: 'inline-flex', alignItems: 'center', gap: 5, opacity: isProcessing ? 0.5 : 1
               }}
             >
-              <span>●</span>
-              Switch to Live Feed
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                <polyline points="17 8 12 3 7 8"/>
+                <line x1="12" y1="3" x2="12" y2="15"/>
+              </svg>
+              {isProcessing ? 'UPLOADING...' : 'Upload Video'}
             </button>
-          </div>
-        ) : (
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 5, padding: '3px 8px', 
-            borderRadius: 4, background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.3)', 
-            color: '#10b981', fontSize: '0.68rem', fontWeight: 800
-          }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981', display: 'inline-block' }} />
-            LIVE DRONE FEED
-          </div>
-        )}
 
-        <div className={`conn-badge ${connectionStatus.toLowerCase()}`}>
-          {connectionStatus === 'LIVE' ? '● LIVE' : connectionStatus === 'CONNECTING' ? '◌ CONNECTING' : connectionStatus === 'RECONNECTING' ? '↻ RECONNECTING' : '○ OFFLINE'}
-        </div>
-
-        {/* Hidden File Input */}
-        <input
-          type="file"
-          ref={fileInputRef}
-          accept="video/mp4"
-          style={{ display: 'none' }}
-          onChange={handleVideoUpload}
-        />
-
-        {/* Upload Video Button */}
-        <button
-          className="btn btn-outline"
-          onClick={() => fileInputRef.current?.click()}
-          disabled={isProcessing}
-          title="Upload a pre-recorded drone flight video for AI analysis"
-          style={{
-            background: 'rgba(255,187,0,0.12)', border: '1px solid var(--amber)', color: 'var(--amber)',
-            padding: '4px 12px', fontSize: '0.72rem', fontWeight: 700, borderRadius: 4, cursor: isProcessing ? 'not-allowed' : 'pointer',
-            display: 'inline-flex', alignItems: 'center', gap: 5, opacity: isProcessing ? 0.5 : 1
-          }}
-        >
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-            <polyline points="17 8 12 3 7 8"/>
-            <line x1="12" y1="3" x2="12" y2="15"/>
-          </svg>
-          {isProcessing ? 'UPLOADING...' : 'Upload Video'}
-        </button>
-
-        {connectionStatus === 'LIVE' ? (
-          <button 
-            className="btn" 
-            onClick={handleDisconnectStream}
-            disabled={isProcessing}
-            style={{ background: '#cc0000', color: '#fff', padding: '4px 12px', fontSize: '0.7rem', borderRadius: 4, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.5 : 1 }}
-          >
-            Disconnect
-          </button>
-        ) : (
-          <button 
-            className="btn" 
-            onClick={handleConnectStream}
-            disabled={isProcessing}
-            style={{ background: '#10b981', color: '#1a1a1a', padding: '4px 12px', fontSize: '0.7rem', borderRadius: 4, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.5 : 1 }}
-          >
-            Connect
-          </button>
+            {connectionStatus === 'LIVE' ? (
+              <button 
+                className="btn" 
+                onClick={handleDisconnectStream}
+                disabled={isProcessing}
+                style={{ background: '#cc0000', color: '#fff', padding: '4px 12px', fontSize: '0.7rem', borderRadius: 4, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.5 : 1 }}
+              >
+                Disconnect
+              </button>
+            ) : (
+              <button 
+                className="btn" 
+                onClick={handleConnectStream}
+                disabled={isProcessing}
+                style={{ background: '#10b981', color: '#1a1a1a', padding: '4px 12px', fontSize: '0.7rem', borderRadius: 4, cursor: isProcessing ? 'not-allowed' : 'pointer', opacity: isProcessing ? 0.5 : 1 }}
+              >
+                Connect
+              </button>
+            )}
+          </>
         )}
       </div>
     </header>

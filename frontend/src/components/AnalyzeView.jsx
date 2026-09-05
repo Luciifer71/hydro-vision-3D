@@ -7,6 +7,7 @@ import {
 import { useStore, CONFIG } from '../store.js';
 import HazardMap from './HazardMap.jsx';
 import { computeSessionRisk } from '../lib/derive.js';
+import ErrorBoundary from './ErrorBoundary.jsx';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, BarElement, Title, Tooltip, Legend, Filler);
 
@@ -276,7 +277,7 @@ export default function AnalyzeView() {
           <span className="card-title">Session Hazard Detection Timeline</span>
           <span className="card-badge badge-live">● Persistent Log</span>
         </div>
-        <div className="card-body"><div className="chart-wrap"><Line data={timelineData} options={CHART_OPTS.timeline} /></div></div>
+        <div className="card-body"><div className="chart-wrap"><ErrorBoundary name="Timeline Chart"><Line data={timelineData} options={CHART_OPTS.timeline} /></ErrorBoundary></div></div>
       </div>
 
       {/* Charts Row */}
@@ -285,7 +286,9 @@ export default function AnalyzeView() {
           <div className="card-header"><span className="card-title">Severity Distribution</span></div>
           <div className="card-body">
             <div className="chart-wrap sm" style={{ position: 'relative' }}>
-              <Doughnut data={sevData} options={CHART_OPTS.donut} />
+              <ErrorBoundary name="Severity Doughnut">
+                <Doughnut data={sevData} options={CHART_OPTS.donut} />
+              </ErrorBoundary>
               <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', pointerEvents: 'none' }}>
                 <div style={{ fontSize: '1.6rem', fontWeight: 800, fontFamily: 'var(--font-mono)' }}>{hazards.length}</div>
                 <div style={{ fontSize: '0.6rem', color: '#666' }}>TOTAL</div>
@@ -303,17 +306,19 @@ export default function AnalyzeView() {
 
         <div className="card">
           <div className="card-header"><span className="card-title">Hazard Classification</span></div>
-          <div className="card-body"><div className="chart-wrap sm"><Bar data={typeData} options={CHART_OPTS.bar} /></div></div>
+          <div className="card-body"><div className="chart-wrap sm"><ErrorBoundary name="Classification Bar"><Bar data={typeData} options={CHART_OPTS.bar} /></ErrorBoundary></div></div>
         </div>
 
         <div className="card">
           <div className="card-header"><span className="card-title">Risk Score Gauge</span></div>
           <div className="card-body">
             <div className="chart-wrap sm" style={{ position: 'relative' }}>
-              <Doughnut
-                data={{ datasets: [{ data: [riskScoreDisplay, 100 - riskScoreDisplay], backgroundColor: [sevColors[riskLevel], 'rgba(255,255,255,0.05)'], borderWidth: 0, circumference: 240, rotation: 240 }] }}
-                options={{ cutout: '78%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, events: [] }}
-              />
+              <ErrorBoundary name="Risk Gauge">
+                <Doughnut
+                  data={{ datasets: [{ data: [riskScoreDisplay, 100 - riskScoreDisplay], backgroundColor: [sevColors[riskLevel], 'rgba(255,255,255,0.05)'], borderWidth: 0, circumference: 240, rotation: 240 }] }}
+                  options={{ cutout: '78%', plugins: { legend: { display: false }, tooltip: { enabled: false } }, events: [] }}
+                />
+              </ErrorBoundary>
               <div className="gauge-center">
                 <div className="gauge-val" style={{ color: sevColors[riskLevel] }}>{riskScoreDisplay}</div>
                 <span className={`sev-badge ${riskLevel.toLowerCase()}`}>{riskLevel}</span>
@@ -330,7 +335,9 @@ export default function AnalyzeView() {
             <span className="card-title">GIS Hazard Map</span>
             <span className="card-badge badge-live">● Session Logged</span>
           </div>
-          <HazardMap />
+          <ErrorBoundary name="GIS Map">
+            <HazardMap />
+          </ErrorBoundary>
         </div>
         <div className="card">
           <div className="card-header">
@@ -377,7 +384,9 @@ export default function AnalyzeView() {
         <div className="card-header"><span className="card-title">Risk Score Over Time (Session Trend)</span></div>
         <div className="card-body">
           <div className="chart-wrap">
-            <Line data={riskData} options={{ ...CHART_OPTS.timeline, scales: { ...CHART_OPTS.timeline.scales, y: { ...CHART_OPTS.timeline.scales.y, max: 100 } } }} />
+            <ErrorBoundary name="Risk Timeline Chart">
+              <Line data={riskData} options={{ ...CHART_OPTS.timeline, scales: { ...CHART_OPTS.timeline.scales, y: { ...CHART_OPTS.timeline.scales.y, max: 100 } } }} />
+            </ErrorBoundary>
           </div>
         </div>
       </div>

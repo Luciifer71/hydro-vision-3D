@@ -11,8 +11,7 @@ import RiskPage from './pages/RiskPage.jsx';
 import AreaAnalyticsPage from './pages/AreaAnalyticsPage.jsx';
 import DepthPage from './pages/DepthPage.jsx';
 import StreamPage from './pages/StreamPage.jsx';
-import BottomBar from './components/BottomBar.jsx';
-import PipelineStatusStrip from './components/PipelineStatusStrip.jsx';
+import MunicipalOperations from './Additional_Features/MunicipalOperations.jsx';
 import ErrorBoundary from './components/ErrorBoundary.jsx';
 import './index.css';
 
@@ -32,6 +31,7 @@ export default function App() {
     volumetric: <AreaAnalyticsPage />,
     depth: <DepthPage />,
     stream: <StreamPage />,
+    municipal: <MunicipalOperations />,
   };
 
   return (
@@ -44,9 +44,11 @@ export default function App() {
           <Sidebar />
         </ErrorBoundary>
         <div className="main">
-          <ErrorBoundary name="Telemetry Bar">
-            <TelemetryBar />
-          </ErrorBoundary>
+          {currentPage !== 'municipal' && (
+            <ErrorBoundary name="Telemetry Bar">
+              <TelemetryBar />
+            </ErrorBoundary>
+          )}
           <div className="content">
             {Object.entries(pages).map(([key, component]) => (
               <div key={key} className={`page ${currentPage === key ? 'active' : ''}`}>
@@ -58,12 +60,6 @@ export default function App() {
           </div>
         </div>
       </div>
-      <ErrorBoundary name="Bottom Bar">
-        <BottomBar />
-      </ErrorBoundary>
-      <ErrorBoundary name="Pipeline Status">
-        <PipelineStatusStrip />
-      </ErrorBoundary>
     </div>
   );
 }

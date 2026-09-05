@@ -22,26 +22,13 @@ export default function TelemetryBar() {
   if (!isLive) {
     return (
       <div className="tele-bar" style={{ justifyContent: 'space-between', background: 'rgba(20, 20, 25, 0.95)', borderBottom: '1px solid rgba(255, 187, 0, 0.3)' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{
-            display: 'inline-flex', alignItems: 'center', gap: 6,
-            background: 'rgba(255, 187, 0, 0.15)', border: '1px solid var(--amber)',
-            color: 'var(--amber)', padding: '3px 10px', borderRadius: 4,
-            fontSize: '0.75rem', fontWeight: 800, letterSpacing: '0.5px'
-          }}>
-            <span>RECORDED VIDEO ANALYSIS MODE</span>
-            <span style={{ fontSize: '0.65rem', opacity: 0.8 }}>(Live Telemetry Hidden)</span>
-          </div>
-
-          <div className="tele-item">
-            <span className="tele-label">VIDEO TIME</span>
-            <span className="tele-value">{fmtTime(t.flightTime)}</span>
-          </div>
-
-          <div className="tele-item">
-            <span className="tele-label">HAZARDS</span>
-            <span className="tele-value good">{currentState?.summary?.active_hazards || 0}</span>
-          </div>
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%', paddingLeft: 16 }}>
+          <span style={{ color: '#ef4444', fontWeight: 800, fontSize: '0.75rem', letterSpacing: '1px' }}>
+            TELEMETRY: NOT AVAILABLE
+          </span>
+          <span style={{ color: '#888', fontSize: '0.75rem', marginLeft: 12 }}>
+            (Live telemetry data is only available during active drone flights)
+          </span>
         </div>
 
         <button

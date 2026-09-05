@@ -1,9 +1,8 @@
 import { useEffect, useRef } from 'react';
 import { useStore } from '../store.js';
 
-export default function AttitudeIndicator({ width = 120, height = 120 }) {
+export default function AttitudeIndicator({ width = 120, height = 120, pitch = 0, roll = 0 }) {
   const canvasRef = useRef(null);
-  const { telemetry } = useStore();
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -11,8 +10,8 @@ export default function AttitudeIndicator({ width = 120, height = 120 }) {
     const ctx = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
     const cx = W / 2, cy = H / 2;
-    const pitch = (telemetry.pitch || 0) * (Math.PI / 180) * 3;
-    const roll = (telemetry.roll || 0) * (Math.PI / 180);
+    const p = pitch * (Math.PI / 180) * 3;
+    const r = roll * (Math.PI / 180);
 
     ctx.clearRect(0, 0, W, H);
 
@@ -24,9 +23,9 @@ export default function AttitudeIndicator({ width = 120, height = 120 }) {
 
     ctx.save();
     ctx.translate(cx, cy);
-    ctx.rotate(roll);
+    ctx.rotate(r);
 
-    const pitchOffset = pitch * H * 0.5;
+    const pitchOffset = p * H * 0.5;
 
     // Sky
     ctx.fillStyle = '#1a3050';
@@ -81,7 +80,7 @@ export default function AttitudeIndicator({ width = 120, height = 120 }) {
     ctx.beginPath();
     ctx.arc(cx, cy, cx - 2, 0, Math.PI * 2);
     ctx.stroke();
-  }, [telemetry.pitch, telemetry.roll]);
+  }, [pitch, roll]);
 
   return <canvas ref={canvasRef} width={width} height={height} style={{ borderRadius: '50%' }} />;
 }
