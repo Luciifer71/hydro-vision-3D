@@ -202,10 +202,10 @@ export default function AnalyzeView() {
       >
         <div>
           <div style={{ fontSize: '0.85rem', fontWeight: 900, color: 'var(--amber)', letterSpacing: 1, textTransform: 'uppercase' }}>
-            {streamRunning ? 'PROCESSING LIVE STREAM TELEMETRY' : 'MISSION COMPLETE — POST-INSPECTION ANALYTICS'}
+            {streamRunning ? 'PROCESSING LIVE STREAM TELEMETRY' : 'VIDEO ANALYSIS COMPLETED'}
           </div>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 2 }}>
-            {streamRunning ? '● Active AI dual perception engine extracting infrastructure hazards...' : '✔ AI analysis finalized. Spatial footprints, volume estimation, and risk vectors locked.'}
+            {streamRunning ? '● Active AI dual perception engine extracting infrastructure hazards...' : '✔ Video analysis complete. You can download the annotated video, upload a new video, or connect the live drone feed.'}
           </div>
         </div>
 

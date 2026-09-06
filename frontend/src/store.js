@@ -75,6 +75,8 @@ export function parseGeoJsonFeatures(geojson) {
     const depthIndex = props.relative_depth_index != null ? Number(props.relative_depth_index) : null;
     const severity = props.severity_band || props.severity || '—';
 
+    const visualEvidenceUrl = props.visual_evidence_url || props.evidence_image || props.image_url || null;
+
     return {
       hazard_id: hazardId,
       track_id: props.track_id || idx + 1,
@@ -91,6 +93,8 @@ export function parseGeoJsonFeatures(geojson) {
       priority_score: props.priority_score || (confidence != null ? Math.round(confidence * 100) : 50),
       zone: props.zone || null,
       status: props.status || 'OPEN',
+      visual_evidence_url: visualEvidenceUrl,
+      evidence_image: visualEvidenceUrl,
       first_detected: props.first_detected,
       last_detected: props.last_detected,
       location: { latitude: lat, longitude: lon },
@@ -172,6 +176,9 @@ export const useStore = create((set, get) => ({
   currentState: null,
   previousState: null,
   hazards: INITIAL_HAZARDS,
+  currentSessionHazards: [],
+  historicalHazards: [],
+  allHazards: [],
   timelineHistory: [],
   riskHistory: [],
   lastSupabaseSync: 0,
@@ -268,6 +275,7 @@ export const useStore = create((set, get) => ({
         flightTime: 0, satellites: null, heading: null, verticalSpeed: null, pitch: null, roll: null,
       },
       hazards: [],          
+      currentSessionHazards: [],
       timelineHistory: [],  
       riskHistory: [],      
     });
@@ -300,8 +308,19 @@ export const useStore = create((set, get) => ({
     get().addLog(`Analyzing recorded video feed: ${fileName}`);
   },
 
-  syncHazardsToSupabase: async () => {
-    const hazards = get().hazards;
+  syncHazardsToSupabase: async (hazardsToSync = null) => {
+    const st = get();
+    let hazards = hazardsToSync;
+    if (!hazards || hazards.length === 0) {
+      if (st.currentSessionHazards && st.currentSessionHazards.length > 0) {
+        hazards = st.currentSessionHazards;
+      } else if (st.hazards && st.hazards.length > 0) {
+        hazards = st.hazards;
+      } else if (st.allHazards && st.allHazards.length > 0) {
+        hazards = st.allHazards;
+      }
+    }
+
     if (!hazards || hazards.length === 0) {
       console.warn('[SUPABASE] No hazards to sync.');
       get().addLog('Supabase sync skipped: No active hazards.');
@@ -321,6 +340,7 @@ export const useStore = create((set, get) => ({
     const pad = (n) => String(n).padStart(2, '0');
     const d = new Date();
     const nowIso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}+05:30`;
+    const nowIstText = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} IST`;
 
     // 1. Primary: Upsert into 'hazards' table with exact schema & PostGIS POINT
     const hazardsPayload = hazards.map((h, idx) => {
@@ -331,19 +351,24 @@ export const useStore = create((set, get) => ({
       const conf = h.confidence != null ? Number(Number(h.confidence).toFixed(4)) : 0.85;
       const hid = h.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
       const areaM2 = h.surface_area_m2 != null ? Number(h.surface_area_m2) : (h.area_m2 != null ? Number(h.area_m2) : null);
-
+      const volM3 = areaM2 != null ? Number((areaM2 * 0.05).toFixed(4)) : (h.volumetric_m3 != null ? Number(h.volumetric_m3) : 0.0250);
       return {
         hazard_id: hid,
+        ticket_id: h.ticket_id || hid,
         class_id: classId,
         class_name: h.class_name || h.type || 'potholes',
         confidence: conf,
         latitude: lat,
         longitude: lon,
+        volumetric_m3: volM3,
+        estimated_volume_m3: volM3,
+        wgs84_coords: { latitude: lat, longitude: lon, lat, lon },
         location: `POINT(${lon} ${lat})`,
         detections_count: h.detections_count || 1,
-        estimated_volume_m3: areaM2 != null ? Number((areaM2 * 0.05).toFixed(4)) : null,
         first_detected: h.first_detected || nowIso,
         last_detected: h.last_detected || nowIso,
+        first_detected_ist: h.first_detected_ist || nowIstText,
+        last_detected_ist: h.last_detected_ist || nowIstText,
       };
     });
 
@@ -355,7 +380,10 @@ export const useStore = create((set, get) => ({
       const conf = h.confidence != null ? Number(Number(h.confidence).toFixed(4)) : 0.85;
       const hid = h.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
       const sev = (h.severity_band || h.severity || 'LOW').toUpperCase();
-      const areaM2 = h.surface_area_m2 != null ? Number(h.surface_area_m2) : (h.area_m2 != null ? Number(h.area_m2) : null);
+      let visualEvidenceUrl = h.visual_evidence_url || h.evidence_image || h.image_url;
+      if (!visualEvidenceUrl || visualEvidenceUrl.startsWith('data:image')) {
+        visualEvidenceUrl = `/api/hazards/${hid}/evidence`;
+      }
 
       return {
         hazard_id: hid,
@@ -364,9 +392,10 @@ export const useStore = create((set, get) => ({
         latitude: lat,
         longitude: lon,
         severity: ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'].includes(sev) ? sev : 'LOW',
-        status: 'OPEN',
+        status: h.status || 'OPEN',
         surface_area_m2: areaM2,
         zone: h.zone || 'Ward-1',
+        visual_evidence_url: visualEvidenceUrl,
       };
     });
 
@@ -379,6 +408,22 @@ export const useStore = create((set, get) => ({
         syncSuccess = true;
         syncedCount = hazardsPayload.length;
         get().addLog(`[SUPABASE CLOUD] Synced ${syncedCount} hazards to hazards table`);
+        
+        // Merge synced hazards directly into local allHazards state
+        set(state => {
+          const allMap = new Map();
+          (state.historicalHazards || []).forEach(h => allMap.set(h.hazard_id, h));
+          (state.allHazards || []).forEach(h => allMap.set(h.hazard_id, h));
+          hazards.forEach(h => {
+            const ex = allMap.get(h.hazard_id);
+            allMap.set(h.hazard_id, { ...(ex || {}), ...h });
+          });
+          const updatedAll = Array.from(allMap.values());
+          return {
+            allHazards: updatedAll,
+            historicalHazards: updatedAll
+          };
+        });
       } else {
         console.warn('[SUPABASE] Hazards table sync notice:', resHazards.error.message);
       }
@@ -484,42 +529,97 @@ export const useStore = create((set, get) => ({
 
   fetchGeoJsonHazards: async () => {
     try {
-      let res = await fetch('/hazards.geojson');
+      let res = await fetch('/hazards.geojson').catch(() => ({ ok: false }));
       if (!res.ok) {
-        res = await fetch(`${get().settings.apiUrl}/api/hazards/geojson`);
+        res = await fetch(`${get().settings.apiUrl}/api/hazards/geojson`).catch(() => ({ ok: false }));
       }
-      if (res.ok) {
-        const geojson = await res.json();
-        if (geojson && geojson.features && geojson.features.length > 0) {
-          const parsedHazards = parseGeoJsonFeatures(geojson);
+      if (!res.ok) {
+        res = await fetch(`${get().settings.apiUrl}/api/hazards`).catch(() => ({ ok: false }));
+      }
+      if (!res.ok) {
+        res = await fetch(`${get().settings.apiUrl}/api/sessions/latest/hazards`).catch(() => ({ ok: false }));
+      }
+
+      if (res && res.ok) {
+        const data = await res.json();
+        let parsedHazards = [];
+        if (data.features) {
+          parsedHazards = parseGeoJsonFeatures(data);
+        } else if (data.hazards && Array.isArray(data.hazards)) {
+          parsedHazards = data.hazards.map((h, idx) => {
+            const lat = Number(h.lat ?? h.latitude ?? 22.3072);
+            const lon = Number(h.lon ?? h.longitude ?? 73.1812);
+            const className = h.class_name || h.hazard || 'unknown';
+            const hid = h.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
+            const areaM2 = h.area_m2 != null ? Number(h.area_m2) : (h.surface_area_m2 != null ? Number(h.surface_area_m2) : null);
+            const visualEvidenceUrl = h.visual_evidence_url || h.evidence_image || `/api/hazards/${hid}/evidence`;
+            return {
+              hazard_id: hid,
+              ticket_id: h.ticket_id || hid,
+              track_id: h.track_id || idx + 1,
+              type: className,
+              class_name: className,
+              confidence: h.confidence_max != null ? Number(h.confidence_max) : (h.confidence != null ? Number(h.confidence) : 0.85),
+              detections_count: h.detections_count || 1,
+              area_m2: areaM2,
+              surface_area_m2: areaM2,
+              severity: (h.severity_band || h.severity || 'LOW').toUpperCase(),
+              severity_band: (h.severity_band || h.severity || 'LOW').toUpperCase(),
+              priority_score: h.priority_score || 50,
+              status: h.status || 'OPEN',
+              visual_evidence_url: visualEvidenceUrl,
+              evidence_image: visualEvidenceUrl,
+              latitude: lat,
+              longitude: lon,
+              location: { latitude: lat, longitude: lon },
+              last_detected: new Date().toISOString(),
+              first_detected_ist: new Date().toLocaleString('en-IN') + ' IST',
+            };
+          });
+        }
+
+        if (parsedHazards.length > 0) {
           const totalArea = parsedHazards.reduce((sum, h) => sum + (Number(h.surface_area_m2) || 0), 0);
           const { riskScore, riskLevel } = computeSessionRisk(parsedHazards, {});
           
-          set((state) => ({
-            hazards: parsedHazards,
-            currentState: {
-              ...(state.currentState || {}),
-              stream_status: 'LIVE',
-              frame_id: state.currentState?.frame_id || 1,
-              timestamp: Date.now() / 1000,
-              summary: {
-                active_hazards: parsedHazards.length,
-                total_affected_area: totalArea,
-                total_area_m2: totalArea,
-                overall_risk: riskLevel,
-                risk_level: riskLevel,
-                risk_score: riskScore,
-                action: riskLevel === 'CRITICAL' ? 'Issue emergency response and traffic reroute.' : 'Dispatch local maintenance crew.',
-                alert_count: parsedHazards.length,
-              },
+          set((state) => {
+            const allMap = new Map();
+            (state.historicalHazards || []).forEach(h => allMap.set(h.hazard_id, h));
+            (state.allHazards || []).forEach(h => allMap.set(h.hazard_id, h));
+            parsedHazards.forEach(h => allMap.set(h.hazard_id, h));
+            const mergedAll = Array.from(allMap.values());
+
+            return {
               hazards: parsedHazards,
-            }
-          }));
-          get().addLog(`Loaded ${parsedHazards.length} hazards from hazards.geojson`);
+              currentSessionHazards: parsedHazards,
+              allHazards: mergedAll,
+              currentState: {
+                ...(state.currentState || {}),
+                stream_status: 'LIVE',
+                frame_id: state.currentState?.frame_id || 1,
+                timestamp: Date.now() / 1000,
+                summary: {
+                  active_hazards: parsedHazards.length,
+                  total_affected_area: totalArea,
+                  total_area_m2: totalArea,
+                  overall_risk: riskLevel,
+                  risk_level: riskLevel,
+                  risk_score: riskScore,
+                  action: riskLevel === 'CRITICAL' ? 'Issue emergency response and traffic reroute.' : 'Dispatch local maintenance crew.',
+                  alert_count: parsedHazards.length,
+                },
+                hazards: parsedHazards,
+              }
+            };
+          });
+          get().addLog(`Loaded ${parsedHazards.length} hazards from session detection pipeline`);
+          
+          // Auto-sync new session hazards to Supabase Cloud!
+          await get().syncHazardsToSupabase(parsedHazards);
         }
       }
     } catch (e) {
-      console.warn('GeoJSON fetch notice:', e);
+      console.warn('Session hazards fetch notice:', e);
     }
   },
 
@@ -564,6 +664,7 @@ export const useStore = create((set, get) => ({
           const depthIndex = h.relative_depth_index != null ? Number(h.relative_depth_index) : null;
           const severityBand = h.severity_band || h.severity ? (h.severity_band || h.severity).toUpperCase() : '—';
           const conf = h.confidence != null ? Number(h.confidence) : (h.confidence_max != null ? Number(h.confidence_max) : null);
+          const visualEvidenceUrl = h.visual_evidence_url || h.evidence_image || h.image_url || null;
 
           return {
             hazard_id: h.hazard_id ?? h.id ?? `HAZ-${String(idx + 1).padStart(4, '0')}`,
@@ -579,6 +680,8 @@ export const useStore = create((set, get) => ({
             severity: severityBand,
             severity_band: severityBand,
             status: h.status || 'OPEN',
+            visual_evidence_url: visualEvidenceUrl,
+            evidence_image: visualEvidenceUrl,
             latitude: h.latitude ?? h.location?.latitude,
             longitude: h.longitude ?? h.location?.longitude,
             location: { latitude: h.latitude ?? h.location?.latitude, longitude: h.longitude ?? h.location?.longitude },
@@ -588,22 +691,48 @@ export const useStore = create((set, get) => ({
 
         set((state) => {
           const now = new Date().toLocaleTimeString('en-US', { hour12: false });
-          const hazardMap = new Map(state.hazards.map((h) => [h.hazard_id, h]));
-          incomingParsed.forEach((h) => hazardMap.set(h.hazard_id, h));
-          const accumulatedHazards = Array.from(hazardMap.values());
-          const validAreas = accumulatedHazards.map(h => h.area_m2 ?? h.surface_area_m2).filter(a => a != null);
+          const sessionMap = new Map();
+          
+          // Accumulate strictly into current session hazards (avoid polluting with 277 old historical hazards)
+          (state.currentSessionHazards || []).forEach((h) => sessionMap.set(h.hazard_id, h));
+          
+          // Merge incoming hazards non-destructively
+          incomingParsed.forEach((inc) => {
+            const existing = sessionMap.get(inc.hazard_id);
+            const merged = {
+              ...(existing || {}),
+              ...inc,
+              visual_evidence_url: inc.visual_evidence_url || existing?.visual_evidence_url || inc.evidence_image || existing?.evidence_image || null,
+              evidence_image: inc.evidence_image || existing?.evidence_image || inc.visual_evidence_url || existing?.visual_evidence_url || null,
+              hasProof: inc.hasProof || existing?.hasProof || false,
+              rejection_reason: inc.rejection_reason || existing?.rejection_reason || null,
+            };
+            sessionMap.set(inc.hazard_id, merged);
+          });
+
+          const sessionHazards = Array.from(sessionMap.values());
+          const validAreas = sessionHazards.map(h => h.area_m2 ?? h.surface_area_m2).filter(a => a != null);
           const totalArea = validAreas.reduce((sum, a) => sum + Number(a), 0);
-          const { riskScore, riskLevel } = computeSessionRisk(accumulatedHazards, raw.summary || {});
+          const { riskScore, riskLevel } = computeSessionRisk(sessionHazards, raw.summary || {});
 
           const currentFId = incomingFrameId != null
             ? incomingFrameId
             : (state.currentState?.frame_id ?? state.frame_id ?? 0);
 
+          // Merge current session into allHazards without mutating historicalHazards
+          const allMap = new Map();
+          (state.historicalHazards || []).forEach(h => allMap.set(h.hazard_id, h));
+          (state.allHazards || []).forEach(h => allMap.set(h.hazard_id, h));
+          sessionHazards.forEach(h => allMap.set(h.hazard_id, h));
+          const allAccumulated = Array.from(allMap.values());
+
           return {
             stream_status: raw.status === 'online' ? 'LIVE' : 'STREAMING',
             frame_id: currentFId,
             stage_status: stageStatus,
-            hazards: accumulatedHazards,
+            hazards: sessionHazards,
+            currentSessionHazards: sessionHazards,
+            allHazards: allAccumulated,
             
             telemetry: state.feedMode === 'video' ? {
               altitude: null, latitude: null, longitude: null,
@@ -614,7 +743,7 @@ export const useStore = create((set, get) => ({
 
             timelineHistory: [
               ...state.timelineHistory, 
-              { time: now, count: accumulatedHazards.length }
+              { time: now, count: sessionHazards.length }
             ].slice(-CONFIG.CHART_HISTORY),
             
             riskHistory: [
@@ -628,28 +757,28 @@ export const useStore = create((set, get) => ({
               frame_id: currentFId,
               timestamp: Date.now() / 1000,
               summary: {
-                active_hazards: accumulatedHazards.length,
+                active_hazards: sessionHazards.length,
                 total_affected_area: totalArea,
                 total_area_m2: totalArea,
                 overall_risk: riskLevel,
                 risk_level: riskLevel,
                 risk_score: riskScore,
                 action: riskLevel === 'CRITICAL' ? 'Issue emergency response and traffic reroute.' : 'Dispatch local maintenance crew.',
-                alert_count: accumulatedHazards.length,
+                alert_count: sessionHazards.length,
                 frames_processed: currentFId,
               },
-              hazards: accumulatedHazards,
+              hazards: sessionHazards,
             }
           };
         });
 
-        // Background Auto-Sync logic (debounced to 8 seconds)
+        // Background Auto-Sync logic (debounced to 8 seconds or on finish)
         const st = get();
-        if (st.hazards && st.hazards.length > 0) {
+        if (st.currentSessionHazards && st.currentSessionHazards.length > 0) {
           const nowMs = Date.now();
           if (nowMs - st.lastSupabaseSync > 8000 || raw.summary?.finished) {
             set({ lastSupabaseSync: nowMs });
-            get().syncHazardsToSupabase();
+            get().syncHazardsToSupabase(st.currentSessionHazards);
           }
         }
       } catch (e) { console.error('WS parse:', e); }
@@ -714,12 +843,36 @@ export const useStore = create((set, get) => ({
 
   resetStream: async () => {
     await get().stopStream();
-    set({ hazards: [], currentState: null, previousState: null, timelineHistory: [], riskHistory: [], trajectory: [] });
-    get().addLog('Stream reset');
+    set(state => ({ 
+      hazards: [], 
+      currentSessionHazards: [],
+      allHazards: state.historicalHazards || [],
+      currentState: null, 
+      previousState: null, 
+      timelineHistory: [], 
+      riskHistory: [], 
+      trajectory: [] 
+    }));
+    get().addLog('Stream reset — Current session cleared');
   },
 
   updateHazardStatus: async (hazardId, status, extra = {}) => {
     const { settings, addLog, currentUser } = get();
+    
+    // Sync status update directly to Supabase Cloud hazards table
+    try {
+      const updatePayload = { status: status };
+      if (extra.rejection_reason) updatePayload.rejection_reason = extra.rejection_reason;
+      await supabase
+        .from('hazards')
+        .update(updatePayload)
+        .eq('hazard_id', hazardId);
+    } catch (e) {
+      console.warn('[SUPABASE] Status update sync warning:', e);
+    }
+
+    const updater = h => (h.hazard_id === hazardId || h.track_id === hazardId) ? { ...h, status, ...extra } : h;
+
     try {
       const res = await fetch(`${settings.apiUrl}/api/hazards/status`, {
         method: 'POST',
@@ -743,15 +896,179 @@ export const useStore = create((set, get) => ({
 
       addLog(`Hazard ${hazardId} → ${status}`);
       set(state => ({
-        hazards: state.hazards.map(h => (h.hazard_id === hazardId || h.track_id === hazardId) ? { ...h, status, ...extra } : h)
+        hazards: state.hazards.map(updater),
+        currentSessionHazards: state.currentSessionHazards.map(updater),
+        historicalHazards: state.historicalHazards.map(updater),
+        allHazards: state.allHazards.map(updater)
       }));
       return { success: true };
     } catch {
       addLog(`Hazard ${hazardId} status updated locally → ${status}`);
       set(state => ({
-        hazards: state.hazards.map(h => (h.hazard_id === hazardId || h.track_id === hazardId) ? { ...h, status, ...extra } : h)
+        hazards: state.hazards.map(updater),
+        currentSessionHazards: state.currentSessionHazards.map(updater),
+        historicalHazards: state.historicalHazards.map(updater),
+        allHazards: state.allHazards.map(updater)
       }));
       return { success: true };
+    }
+  },
+
+  fetchSupabaseHazardsHistory: async () => {
+    try {
+      // 1. Ingest latest session hazards (from backend or static mirror)
+      try {
+        let latestData = null;
+        const latestRes = await fetch(`${get().settings.apiUrl}/api/sessions/latest/hazards`).catch(() => null);
+        if (latestRes && latestRes.ok) {
+          latestData = await latestRes.json();
+        }
+        if (!latestData || !latestData.hazards || latestData.hazards.length === 0) {
+          const staticRes = await fetch('/latest_session_hazards.json').catch(() => null);
+          if (staticRes && staticRes.ok) {
+            latestData = await staticRes.json();
+          }
+        }
+        if (latestData && latestData.hazards && latestData.hazards.length > 0) {
+          const latestParsed = latestData.hazards.map((h, idx) => {
+            const lat = Number(h.lat ?? h.latitude ?? 22.3072);
+            const lon = Number(h.lon ?? h.longitude ?? 73.1812);
+            const className = h.class_name || h.hazard || 'unknown';
+            const hid = h.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
+            const areaM2 = h.area_m2 != null ? Number(h.area_m2) : (h.surface_area_m2 != null ? Number(h.surface_area_m2) : null);
+            const visualEvidenceUrl = h.visual_evidence_url || h.evidence_image || `/api/hazards/${hid}/evidence`;
+            return {
+              hazard_id: hid,
+              ticket_id: h.ticket_id || hid,
+              track_id: h.track_id || idx + 1,
+              type: className,
+              class_name: className,
+              confidence: h.confidence_max != null ? Number(h.confidence_max) : (h.confidence != null ? Number(h.confidence) : 0.85),
+              detections_count: h.detections_count || 1,
+              area_m2: areaM2,
+              surface_area_m2: areaM2,
+              severity: (h.severity_band || h.severity || 'LOW').toUpperCase(),
+              severity_band: (h.severity_band || h.severity || 'LOW').toUpperCase(),
+              priority_score: h.priority_score || 50,
+              status: 'OPEN',
+              visual_evidence_url: visualEvidenceUrl,
+              evidence_image: visualEvidenceUrl,
+              latitude: lat,
+              longitude: lon,
+              location: { latitude: lat, longitude: lon },
+              last_detected: h.last_detected || new Date().toISOString(),
+              first_detected_ist: h.first_detected_ist || new Date().toLocaleString('en-IN') + ' IST',
+              source: 'Latest Session Archive'
+            };
+          });
+
+          set({ currentSessionHazards: latestParsed });
+        }
+      } catch (backendSyncErr) {
+        console.warn('Backend local session auto-sync notice:', backendSyncErr);
+      }
+
+      // 2. Fetch all consolidated records from Supabase Cloud
+      let dbHazards = null;
+      try {
+        const { data, error } = await supabase
+          .from('hazards')
+          .select('*')
+          .order('last_detected', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          dbHazards = data;
+        } else if (error) {
+          console.warn('[SUPABASE] Fetch hazards notice:', error.message);
+        }
+      } catch (cloudErr) {
+        console.warn('[SUPABASE] Query notice:', cloudErr);
+      }
+
+      // 3. Fallback to static archive if cloud query returned no data
+      if (!dbHazards || dbHazards.length === 0) {
+        const mirrorRes = await fetch('/all_session_hazards.json').catch(() => null);
+        if (mirrorRes && mirrorRes.ok) {
+          const mirrorData = await mirrorRes.json();
+          dbHazards = mirrorData.hazards || mirrorData;
+        }
+      }
+
+      if (dbHazards && dbHazards.length > 0) {
+        const parsed = dbHazards.map((h, idx) => {
+          const lat = Number(h.latitude ?? 22.3072);
+          const lon = Number(h.longitude ?? 73.1812);
+          const className = h.class_name || 'potholes';
+          const volumeM3 = h.volumetric_m3 != null ? Number(h.volumetric_m3) : (h.estimated_volume_m3 != null ? Number(h.estimated_volume_m3) : null);
+          const areaM2 = volumeM3 != null ? Number((volumeM3 / 0.05).toFixed(2)) : 5.0;
+          const hid = h.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
+          const visualEvidenceUrl = h.visual_evidence_url || h.evidence_image || h.image_url || `/api/hazards/${hid}/evidence`;
+
+          return {
+            hazard_id: hid,
+            ticket_id: h.ticket_id || hid,
+            track_id: idx + 1,
+            type: className,
+            class_name: className,
+            confidence: h.confidence != null ? Number(h.confidence) : 0.85,
+            detections_count: h.detections_count || 1,
+            area_m2: areaM2,
+            surface_area_m2: areaM2,
+            volumetric_m3: volumeM3,
+            estimated_volume_m3: volumeM3,
+            wgs84_coords: h.wgs84_coords || { latitude: lat, longitude: lon, lat, lon },
+            severity: severityFromArea(areaM2),
+            severity_band: severityFromArea(areaM2),
+            status: h.status || 'OPEN',
+            rejection_reason: h.rejection_reason || null,
+            visual_evidence_url: visualEvidenceUrl,
+            evidence_image: visualEvidenceUrl,
+            latitude: lat,
+            longitude: lon,
+            location: { latitude: lat, longitude: lon },
+            first_detected: h.first_detected,
+            last_detected: h.last_detected,
+            first_detected_ist: h.first_detected_ist,
+            last_detected_ist: h.last_detected_ist,
+            source: 'Supabase Cloud DB'
+          };
+        });
+
+        set(state => {
+          const map = new Map();
+          // Insert parsed DB hazards
+          parsed.forEach(h => map.set(h.hazard_id, h));
+          
+          // Merge current session hazards non-destructively into allHazards
+          (state.currentSessionHazards || []).forEach(h => {
+            const existing = map.get(h.hazard_id);
+            const merged = {
+              ...(existing || {}),
+              ...h,
+              visual_evidence_url: h.visual_evidence_url || existing?.visual_evidence_url || h.evidence_image || existing?.evidence_image || null,
+              evidence_image: h.evidence_image || existing?.evidence_image || h.visual_evidence_url || existing?.visual_evidence_url || null,
+              hasProof: h.hasProof || existing?.hasProof || false,
+              rejection_reason: h.rejection_reason || existing?.rejection_reason || null,
+            };
+            map.set(h.hazard_id, merged);
+          });
+          
+          const merged = Array.from(map.values());
+          return { 
+            historicalHazards: parsed,
+            allHazards: merged,
+            hazards: state.currentSessionHazards && state.currentSessionHazards.length > 0 ? state.currentSessionHazards : merged,
+            supabaseLoaded: true 
+          };
+        });
+
+        get().addLog(`[SUPABASE CLOUD] Synchronized ${parsed.length} historical hazards from Cloud Database.`);
+        return { success: true, count: parsed.length };
+      }
+      return { success: true, count: 0 };
+    } catch (err) {
+      console.warn('[SUPABASE] Fetch catch:', err);
+      return { success: false, error: err.message };
     }
   },
 

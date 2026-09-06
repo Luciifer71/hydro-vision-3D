@@ -5,11 +5,16 @@ import EmptySessionState from '../components/EmptySessionState.jsx';
 import ErrorBoundary from '../components/ErrorBoundary.jsx';
 
 export default function MapPage() {
-  const { hazards = [], currentState, fetchGeoJsonHazards } = useStore();
+  const { hazards = [], allHazards = [], currentSessionHazards = [], currentState, fetchGeoJsonHazards } = useStore();
+  const activeHazards = allHazards.length > 0 ? allHazards : (currentSessionHazards.length > 0 ? currentSessionHazards : hazards);
   const [currentTime, setCurrentTime] = useState('');
 
-  // Auto-fetch hazards if none loaded yet
+  // Auto-fetch hazards from backend & Supabase Cloud history on mount
   useEffect(() => {
+    const store = useStore.getState();
+    if (store.fetchSupabaseHazardsHistory) {
+      store.fetchSupabaseHazardsHistory();
+    }
     if (hazards.length === 0 && fetchGeoJsonHazards) {
       fetchGeoJsonHazards();
     }
@@ -24,7 +29,7 @@ export default function MapPage() {
     return () => clearInterval(timer);
   }, []);
 
-  const validAreas = hazards.map(h => h.area_m2 ?? h.surface_area_m2).filter(a => a != null);
+  const validAreas = activeHazards.map(h => h.area_m2 ?? h.surface_area_m2).filter(a => a != null);
   const totalArea = validAreas.reduce((s, a) => s + Number(a), 0);
   const coverageAreaText = validAreas.length > 0 ? `${totalArea.toFixed(2)} m²` : '—';
 
@@ -33,7 +38,7 @@ export default function MapPage() {
       {/* KPI Grid */}
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
         {[
-          { label: 'Total Markers', value: hazards.length },
+          { label: 'Total Markers', value: activeHazards.length },
           { label: 'Coverage Area', value: coverageAreaText },
           { label: 'Last Updated', value: currentTime || '—' },
         ].map(({ label, value }) => (

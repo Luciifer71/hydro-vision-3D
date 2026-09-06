@@ -88,7 +88,7 @@ const NavIcon = ({ type }) => {
 };
 
 const NAV = [
-  { id: 'dashboard', label: 'Setup', icon: 'setup' },
+  { id: 'dashboard', label: 'Dashboard', icon: 'setup' },
   { id: 'stream', label: 'Stream Control', icon: 'stream' },
   { section: 'Detection' },
   { id: 'detections', label: 'Detections', icon: 'detection', badge: 'detection' },

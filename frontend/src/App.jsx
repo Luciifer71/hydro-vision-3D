@@ -25,11 +25,12 @@ const ADMIN_ONLY_PAGES = {
 };
 
 export default function App() {
-  const { connect, currentPage, currentUser } = useStore();
+  const { connect, currentPage, currentUser, fetchSupabaseHazardsHistory } = useStore();
   const isEmployee = currentUser?.role === 'employee';
 
   useEffect(() => {
     connect();
+    fetchSupabaseHazardsHistory();
   }, []);
 
   const pages = {

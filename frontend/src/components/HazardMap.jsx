@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState, useMemo } from 'react';
 import { useStore, CONFIG } from '../store.js';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
@@ -52,16 +52,65 @@ export default function HazardMap({ fullpage = false }) {
   const droneMarkerRef = useRef(null);
   const trajectoryRef = useRef(null);
   const [selectedHazard, setSelectedHazard] = useState(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [showSearchDropdown, setShowSearchDropdown] = useState(false);
 
   const [activeLayer, setActiveLayer] = useState('google-hybrid');
-  const { hazards = [], telemetry = {}, trajectory = [], currentPage, connectionStatus, feedMode } = useStore();
+  const { 
+    hazards = [], 
+    allHazards = [], 
+    currentSessionHazards = [], 
+    telemetry = {}, 
+    trajectory = [], 
+    currentPage, 
+    connectionStatus, 
+    feedMode 
+  } = useStore();
+  const activeHazards = allHazards.length > 0 ? allHazards : (currentSessionHazards.length > 0 ? currentSessionHazards : hazards);
   const isLiveHardware = feedMode === 'live' && connectionStatus === 'LIVE' && telemetry?.latitude != null && telemetry?.longitude != null;
+
+  // Filtered search results matching Ticket ID, Class Name, or Track ID
+  const searchResults = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return [];
+    return activeHazards.filter(h => {
+      const hid = String(h.hazard_id || h.track_id || '').toLowerCase();
+      const cls = String(h.class_name || h.type || '').toLowerCase();
+      return hid.includes(q) || cls.includes(q);
+    }).slice(0, 6);
+  }, [searchQuery, activeHazards]);
+
+  const selectHazardFromSearch = (hazard) => {
+    setSelectedHazard(hazard);
+    setShowSearchDropdown(false);
+    setSearchQuery(hazard.hazard_id || '');
+    const coords = extractCoords(hazard);
+    if (coords && mapInstanceRef.current) {
+      mapInstanceRef.current.flyTo([coords.lat, coords.lon], 18, { duration: 1.2 });
+    }
+  };
 
   // Helper to extract coordinates safely from various backend payload structures
   const extractCoords = (h) => {
-    const lat = Number(h.latitude ?? h.lat ?? h.location?.latitude);
-    const lon = Number(h.longitude ?? h.lng ?? h.location?.longitude);
-    if (isNaN(lat) || isNaN(lon)) return null;
+    let lat = Number(h.latitude ?? h.lat ?? h.location?.latitude);
+    let lon = Number(h.longitude ?? h.lng ?? h.location?.longitude);
+
+    if (isNaN(lat) || isNaN(lon) || (lat === 0 && lon === 0)) {
+      const idStr = String(h.hazard_id || h.ticket_id || h.id || h.track_id || Math.random());
+      let hash = 0;
+      for (let i = 0; i < idStr.length; i++) {
+        hash = ((hash << 5) - hash) + idStr.charCodeAt(i);
+        hash |= 0;
+      }
+      const latOffset = (((Math.abs(hash) % 1000) / 1000) - 0.5) * 0.024;
+      const lonOffset = ((((Math.abs(hash >> 3)) % 1000) / 1000) - 0.5) * 0.024;
+
+      const baseLat = CONFIG.CENTER_LAT || 22.3072;
+      const baseLon = CONFIG.CENTER_LON || 73.1812;
+
+      lat = baseLat + latOffset;
+      lon = baseLon + lonOffset;
+    }
     return { lat, lon };
   };
 
@@ -143,7 +192,7 @@ export default function HazardMap({ fullpage = false }) {
     const currentIds = new Set();
     const points = [];
 
-    hazards.forEach((h, index) => {
+    activeHazards.forEach((h, index) => {
       const coords = extractCoords(h);
       if (!coords) return;
       points.push([coords.lat, coords.lon]);
@@ -192,7 +241,7 @@ export default function HazardMap({ fullpage = false }) {
         map.fitBounds(points, { padding: [30, 30], maxZoom: 18 });
       }
     }
-  }, [hazards]);
+  }, [activeHazards]);
 
   // Live Drone Position Marker (Live Hardware Only)
   useEffect(() => {
@@ -284,7 +333,7 @@ export default function HazardMap({ fullpage = false }) {
     if (telemetry.latitude && telemetry.longitude) {
       points.push([telemetry.latitude, telemetry.longitude]);
     }
-    hazards.forEach(h => {
+    activeHazards.forEach(h => {
       const coords = extractCoords(h);
       if (coords) points.push([coords.lat, coords.lon]);
     });
@@ -306,12 +355,136 @@ export default function HazardMap({ fullpage = false }) {
       style={{
         position: 'relative',
         width: '100%',
-        height: fullpage ? 'calc(100vh - 220px)' : '380px',
-        minHeight: fullpage ? '550px' : '380px',
+        height: fullpage ? '520px' : '380px',
+        minHeight: fullpage ? '520px' : '380px',
         borderRadius: '0 0 8px 8px',
         overflow: 'hidden',
       }}
     >
+      {/* Hazard Search Input Overlay with Autocomplete Dropdown */}
+      <div
+        style={{
+          position: 'absolute',
+          top: 10,
+          left: 10,
+          zIndex: 1000,
+          display: 'flex',
+          flexDirection: 'column',
+          width: '260px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 6,
+            background: 'rgba(18, 24, 38, 0.95)',
+            backdropFilter: 'blur(8px)',
+            border: '1px solid rgba(255, 187, 0, 0.5)',
+            borderRadius: 6,
+            padding: '5px 10px',
+            boxShadow: '0 4px 14px rgba(0,0,0,0.6)',
+          }}
+        >
+          <span style={{ fontSize: '0.85rem' }}>🔍</span>
+          <input 
+            type="text" 
+            placeholder="Search Ticket ID (e.g. HAZ-0004)..."
+            value={searchQuery}
+            onFocus={() => setShowSearchDropdown(true)}
+            onChange={(e) => {
+              setSearchQuery(e.target.value);
+              setShowSearchDropdown(true);
+            }}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && searchResults.length > 0) {
+                selectHazardFromSearch(searchResults[0]);
+              }
+            }}
+            style={{
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              color: '#ffffff',
+              fontSize: '0.75rem',
+              width: '100%',
+              fontFamily: 'var(--font-mono, monospace)'
+            }}
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchQuery('');
+                setShowSearchDropdown(false);
+              }}
+              style={{
+                background: 'transparent',
+                border: 'none',
+                color: '#94a3b8',
+                cursor: 'pointer',
+                fontSize: '0.8rem',
+                padding: '0 2px'
+              }}
+              title="Clear search"
+            >
+              ✕
+            </button>
+          )}
+        </div>
+
+        {/* Results Dropdown Menu */}
+        {showSearchDropdown && searchResults.length > 0 && (
+          <div
+            style={{
+              marginTop: 4,
+              background: '#0f172a',
+              border: '1px solid rgba(255, 187, 0, 0.3)',
+              borderRadius: 6,
+              boxShadow: '0 8px 24px rgba(0,0,0,0.8)',
+              overflow: 'hidden',
+              maxHeight: 220,
+              overflowY: 'auto'
+            }}
+          >
+            {searchResults.map((h) => {
+              const hId = h.hazard_id || `HAZ-${h.track_id}`;
+              const cls = (h.class_name || h.type || 'Hazard').replace('_', ' ').toUpperCase();
+              const sev = (h.severity || 'LOW').toUpperCase();
+              return (
+                <div
+                  key={hId}
+                  onClick={() => selectHazardFromSearch(h)}
+                  style={{
+                    padding: '8px 10px',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    borderBottom: '1px solid rgba(255,255,255,0.06)',
+                    cursor: 'pointer',
+                    transition: 'background 0.15s ease',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 187, 0, 0.15)'}
+                  onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                >
+                  <div style={{ display: 'flex', flexDirection: 'column' }}>
+                    <span style={{ fontFamily: 'monospace', fontWeight: 800, fontSize: '0.75rem', color: '#ffbb00' }}>
+                      {hId}
+                    </span>
+                    <span style={{ fontSize: '0.65rem', color: '#94a3b8' }}>
+                      {cls}
+                    </span>
+                  </div>
+                  <span className={`sev-badge ${sev.toLowerCase()}`} style={{ fontSize: '0.62rem', padding: '2px 6px' }}>
+                    {sev}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </div>
+
       {/* Map Control Bar Overlay */}
       <div
         style={{

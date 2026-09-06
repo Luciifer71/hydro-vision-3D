@@ -8,7 +8,7 @@ export default function MissionStatusPanel({ streamRunning, hazards, totalArea, 
     mode = 'ACTIVE PIPELINE';
     modeColor = 'var(--green)';
   } else if (currentState?.session_id) {
-    mode = 'MISSION COMPLETE';
+    mode = 'ANALYSIS COMPLETE';
     modeColor = 'var(--cyan)';
   }
 

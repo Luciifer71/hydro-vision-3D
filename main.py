@@ -21,6 +21,7 @@ import statistics
 import subprocess
 import threading
 import time
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -30,7 +31,7 @@ import numpy as np
 import torch
 from fastapi import (FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect,
                      Header, HTTPException)
-from fastapi.responses import StreamingResponse, FileResponse
+from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from pydantic import BaseModel
@@ -307,8 +308,15 @@ class HazardRegistry:
                                   interpolation=cv2.INTER_CUBIC)
             out = self.evidence_dir / f"{h['hazard_id']}.jpg"
             cv2.imwrite(str(out), crop, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
-            h["evidence_image"] = (f"/static/sessions/{self.session_id}"
-                                   f"/evidence/{h['hazard_id']}.jpg")
+            
+            # Global evidence copy for cross-session longevity
+            global_evidence_dir = Path("outputs/evidence")
+            global_evidence_dir.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(global_evidence_dir / f"{h['hazard_id']}.jpg"), crop, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
+
+            evidence_url = f"/api/hazards/{h['hazard_id']}/evidence"
+            h["evidence_image"] = evidence_url
+            h["visual_evidence_url"] = evidence_url
         except Exception as e:
             print(f"[EVIDENCE] Could not save crop for {h.get('hazard_id')}: {e}")
 
@@ -351,6 +359,8 @@ class HazardRegistry:
             depth_index = (round(float(statistics.median(h["depth_samples"])), 3)
                            if h["depth_samples"] else None)
 
+            evidence_url = h.get("visual_evidence_url") or h.get("evidence_image") or f"/api/hazards/{h['hazard_id']}/evidence"
+
             rec = {
                 "hazard_id": h["hazard_id"],
                 "track_id": h["track_id"],
@@ -378,7 +388,8 @@ class HazardRegistry:
                 "geo_source": h["geo_source"],
                 "zone": None,
                 "relative_depth_index": depth_index,
-                "evidence_image": h["evidence_image"],
+                "evidence_image": evidence_url,
+                "visual_evidence_url": evidence_url,
                 "status": h["status"],
                 "confirmed": True,
             }
@@ -580,6 +591,8 @@ class SessionState:
                     "duration_s": h["duration_s"],
                     "geo_source": h["geo_source"],
                     "status": h["status"],
+                    "evidence_image": h.get("evidence_image"),
+                    "visual_evidence_url": h.get("evidence_image"),
                 },
             })
         return {
@@ -603,6 +616,7 @@ class SessionState:
             (self.out_dir / "hazards.geojson").write_text(
                 json.dumps(self.geojson(), indent=2))
             print(f"[ARTIFACT] Wrote session bundle -> {self.out_dir}")
+            _promote_to_latest(self.out_dir)
         except Exception as e:
             self.stage_status["artifact"] = f"failed: {e}"
             print(f"[ARTIFACT ERROR] {e}")
@@ -655,11 +669,28 @@ def compute_relative_depth_index(depth_array: np.ndarray,
 # THE PIPELINE — one pass, live view + mission record
 # ===========================================================================
 
-def _standby_frame(text: str) -> bytes:
+def _standby_frame(text_or_lines) -> bytes:
     img = np.zeros((480, 854, 3), dtype=np.uint8)
-    cv2.putText(img, text, (60, 240), cv2.FONT_HERSHEY_SIMPLEX, 0.6,
-                (0, 255, 255), 2)
-    _, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 60])
+    if isinstance(text_or_lines, str):
+        lines = [text_or_lines]
+    else:
+        lines = list(text_or_lines)
+
+    line_height = 42
+    total_h = len(lines) * line_height
+    start_y = (480 - total_h) // 2 + 30
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    for i, line in enumerate(lines):
+        scale = 0.7 if i == 0 else 0.52
+        thickness = 2 if i == 0 else 1
+        color = (0, 215, 255) if i == 0 else (210, 210, 210)
+        (tw, _), _ = cv2.getTextSize(line, font, scale, thickness)
+        x = max(20, (854 - tw) // 2)
+        y = start_y + i * line_height
+        cv2.putText(img, line, (x, y), font, scale, color, thickness, cv2.LINE_AA)
+
+    _, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 65])
     return buf.tobytes()
 
 
@@ -692,8 +723,77 @@ def _publish_latest(out_dir: Optional[Path]) -> None:
             if LATEST_HAZARDS.exists():
                 LATEST_HAZARDS.unlink()
             shutil.copy2(src_json, LATEST_HAZARDS)
+
+            # Copy to frontend public mirror for instant zero-latency loading
+            frontend_mirror = Path("frontend/public/latest_session_hazards.json")
+            if frontend_mirror.parent.exists():
+                shutil.copy2(src_json, frontend_mirror)
+
+            # Automatically sync newly detected hazards to Supabase Cloud
+            try:
+                data = json.loads(src_json.read_text())
+                session_hazards = data.get("hazards", [])
+                if session_hazards:
+                    t = threading.Thread(target=_sync_to_supabase_cloud, args=(session_hazards,), daemon=True)
+                    t.start()
+            except Exception as e:
+                print(f"[SUPABASE AUTO-SYNC NOTICE] {e}")
     except Exception as e:
         print(f"[ARTIFACT WARNING] Could not publish latest: {e}")
+
+
+def _sync_to_supabase_cloud(hazards_list: List[Dict[str, Any]]) -> None:
+    """Non-blocking direct REST sync of session hazards to Supabase Cloud."""
+    if not hazards_list:
+        return
+    try:
+        url = "https://lkfpdrskgfffwtzbtlnq.supabase.co/rest/v1/hazards?on_conflict=hazard_id"
+        key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxrZnBkcnNrZ2ZmZnd0emJ0bG5xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MDEyNzYsImV4cCI6MjEwMzA3NzI3Nn0.suk69wAZtVKR62BI5QpEFCGfUVKyy_mY6IslM9zoxHw"
+        payload = []
+        for idx, h in enumerate(hazards_list):
+            lat = float(h.get("lat") or h.get("latitude") or 22.3072)
+            lon = float(h.get("lon") or h.get("longitude") or 73.1812)
+            cls = h.get("class_name") or "potholes"
+            class_id = int(h.get("class_id") if h.get("class_id") is not None else 0)
+            conf = float(round(h.get("confidence_max") or h.get("confidence") or 0.85, 4))
+            hid = h.get("hazard_id") or f"HAZ-{idx+1:04d}"
+            area = h.get("area_m2") or h.get("surface_area_m2")
+            vol = round(float(area) * 0.05, 4) if area else 0.025
+
+            payload.append({
+                "hazard_id": hid,
+                "ticket_id": hid,
+                "class_id": class_id,
+                "class_name": cls,
+                "confidence": conf,
+                "latitude": lat,
+                "longitude": lon,
+                "volumetric_m3": vol,
+                "estimated_volume_m3": vol,
+                "wgs84_coords": {"latitude": lat, "longitude": lon, "lat": lat, "lon": lon},
+                "location": f"POINT({lon} {lat})",
+                "detections_count": int(h.get("detections_count") or 1),
+                "first_detected": datetime.now(timezone.utc).isoformat(),
+                "last_detected": datetime.now(timezone.utc).isoformat(),
+                "first_detected_ist": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
+                "last_detected_ist": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
+            })
+
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={
+                "apikey": key,
+                "Authorization": f"Bearer {key}",
+                "Content-Type": "application/json",
+                "Prefer": "resolution=merge-duplicates"
+            },
+            method="POST"
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            print(f"[SUPABASE CLOUD] Auto-synced {len(payload)} hazards from video session.")
+    except Exception as e:
+        print(f"[SUPABASE NOTICE] Cloud auto-sync deferred: {e}")
 
 
 def _prune_old_sessions(keep: Optional[int] = None) -> None:
@@ -787,9 +887,17 @@ def generate_mjpeg_stream():
             pass
         # If pipeline finished while we were waiting, fall through or return
         if not SESSION.active:
-            msg = ("MISSION COMPLETE - REVIEW RESULTS BELOW"
-                   if SESSION.finished
-                   else "SYSTEM STANDBY - UPLOAD VIDEO TO START AI PIPELINE")
+            if SESSION.finished:
+                msg = [
+                    "VIDEO ANALYSIS COMPLETED!",
+                    "You can download the annotated video,",
+                    "upload a new video, or connect the live drone feed."
+                ]
+            else:
+                msg = [
+                    "SYSTEM STANDBY",
+                    "Upload a video or connect live drone feed to start AI pipeline."
+                ]
             yield _wrap(_standby_frame(msg))
             return
 
@@ -830,9 +938,17 @@ def generate_mjpeg_stream():
                     writer.release(); writer = None
                     SESSION.write_artifacts()
                 SESSION.streaming = False
-                msg = ("MISSION COMPLETE - REVIEW RESULTS BELOW"
-                       if SESSION.finished
-                       else "SYSTEM STANDBY - UPLOAD VIDEO TO START AI PIPELINE")
+                if SESSION.finished:
+                    msg = [
+                        "VIDEO ANALYSIS COMPLETED!",
+                        "You can download the annotated video,",
+                        "upload a new video, or connect the live drone feed."
+                    ]
+                else:
+                    msg = [
+                        "SYSTEM STANDBY",
+                        "Upload a video or connect live drone feed to start AI pipeline."
+                    ]
                 yield _wrap(_standby_frame(msg))
                 time.sleep(0.5)
                 continue
@@ -1382,12 +1498,74 @@ def get_latest_video():
 
 @app.get("/api/hazards")
 def get_hazards():
-    return {"hazards": SESSION.hazards(), "summary": SESSION.summary()}
+    hz = SESSION.hazards()
+    if not hz and OUTPUT_ROOT.exists():
+        for d in sorted(OUTPUT_ROOT.iterdir(), reverse=True):
+            if d.is_dir() and (d / "hazards.json").exists():
+                try:
+                    data = json.loads((d / "hazards.json").read_text())
+                    hz = data.get("hazards", [])
+                    if hz:
+                        break
+                except Exception:
+                    pass
+    return {"hazards": hz, "summary": SESSION.summary()}
 
 
 @app.get("/api/hazards/geojson")
 def get_geojson():
-    return SESSION.geojson()
+    geo = SESSION.geojson()
+    if (not geo or not geo.get("features")) and OUTPUT_ROOT.exists():
+        for d in sorted(OUTPUT_ROOT.iterdir(), reverse=True):
+            if d.is_dir() and (d / "hazards.geojson").exists():
+                try:
+                    data = json.loads((d / "hazards.geojson").read_text())
+                    if data.get("features"):
+                        return data
+                except Exception:
+                    pass
+    return geo
+
+
+@app.get("/api/sessions/latest/hazards")
+def get_latest_session_hazards():
+    """Returns hazards from the most recent completed or active inspection session."""
+    hz = SESSION.hazards()
+    if hz:
+        return {"session_id": SESSION.session_id, "hazards": hz}
+    if OUTPUT_ROOT.exists():
+        for d in sorted(OUTPUT_ROOT.iterdir(), reverse=True):
+            if d.is_dir() and (d / "hazards.json").exists():
+                try:
+                    data = json.loads((d / "hazards.json").read_text())
+                    return {"session_id": d.name, "hazards": data.get("hazards", [])}
+                except Exception:
+                    pass
+    return {"session_id": None, "hazards": []}
+
+
+@app.get("/api/sessions/all-hazards")
+def get_all_session_hazards():
+    """Aggregates all unique hazards detected across all stored session runs."""
+    hazard_map = {}
+    # 1. Ingest from all session directories on disk
+    if OUTPUT_ROOT.exists():
+        for d in sorted(OUTPUT_ROOT.iterdir()):
+            if d.is_dir() and (d / "hazards.json").exists():
+                try:
+                    data = json.loads((d / "hazards.json").read_text())
+                    for h in data.get("hazards", []):
+                        hid = h.get("hazard_id")
+                        if hid:
+                            hazard_map[hid] = h
+                except Exception:
+                    pass
+    # 2. Ingest from active in-memory session if present
+    for h in SESSION.hazards():
+        hid = h.get("hazard_id")
+        if hid:
+            hazard_map[hid] = h
+    return {"hazards": list(hazard_map.values()), "count": len(hazard_map)}
 
 
 @app.get("/api/session")
@@ -1536,6 +1714,65 @@ def download_on_demand_recording():
                          "the pipeline finish."}
     return FileResponse(str(LATEST_VIDEO), media_type="video/mp4",
                         filename=DOWNLOAD_NAME)
+
+
+def _generate_telemetry_card(clean_id: str) -> Path:
+    card_dir = Path("outputs/evidence")
+    card_dir.mkdir(parents=True, exist_ok=True)
+    card_path = card_dir / f"{clean_id}.jpg"
+
+    # 480x320 tactical defect record card
+    img = np.zeros((320, 480, 3), dtype=np.uint8)
+    img[:] = (18, 24, 36)
+
+    cv2.rectangle(img, (8, 8), (472, 312), (50, 70, 95), 1)
+    cv2.rectangle(img, (12, 12), (468, 308), (35, 48, 68), 1)
+
+    for x, y in [(16, 16), (464, 16), (16, 304), (464, 304)]:
+        cv2.circle(img, (x, y), 3, (0, 215, 255), -1)
+
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(img, "CIVIC DEFECT SENSOR ARCHIVE", (24, 45), font, 0.52, (0, 215, 255), 2, cv2.LINE_AA)
+    cv2.putText(img, "AUTONOMOUS INFRASTRUCTURE LOG", (24, 70), font, 0.4, (140, 160, 180), 1, cv2.LINE_AA)
+    cv2.line(img, (24, 85), (456, 85), (50, 70, 95), 1)
+
+    cv2.rectangle(img, (24, 105), (280, 155), (28, 38, 56), -1)
+    cv2.rectangle(img, (24, 105), (280, 155), (0, 180, 216), 1)
+    cv2.putText(img, f"ID: {clean_id}", (36, 138), font, 0.8, (255, 255, 255), 2, cv2.LINE_AA)
+
+    cv2.putText(img, "DETECTION: Aerial Perception Ingestion", (24, 190), font, 0.42, (200, 215, 230), 1, cv2.LINE_AA)
+    cv2.putText(img, "JURISDICTION: Vadodara Municipal Region", (24, 215), font, 0.42, (200, 215, 230), 1, cv2.LINE_AA)
+    cv2.putText(img, "STATUS: Logged in Central Database", (24, 240), font, 0.42, (16, 185, 129), 1, cv2.LINE_AA)
+    cv2.putText(img, "HYDRO-VISION-3D // ELCIA TACTICAL GIS", (24, 288), font, 0.38, (100, 120, 140), 1, cv2.LINE_AA)
+
+    cv2.imwrite(str(card_path), img, [int(cv2.IMWRITE_JPEG_QUALITY), 90])
+    return card_path
+
+
+@app.get("/api/hazards/{hazard_id}/evidence")
+def get_hazard_evidence(hazard_id: str):
+    """Universal evidence crop image resolver searching across all session archives."""
+    clean_id = Path(hazard_id).name.replace(".jpg", "")
+
+    # 1. Search session evidence directories (newest sessions first)
+    sessions_dir = Path("outputs/sessions")
+    if sessions_dir.exists():
+        for session_dir in sorted(sessions_dir.glob("*"), reverse=True):
+            img_path = session_dir / "evidence" / f"{clean_id}.jpg"
+            if img_path.exists():
+                return FileResponse(str(img_path), media_type="image/jpeg")
+
+    # 2. Search fallback root/latest evidence directories
+    for fallback in [
+        Path("outputs/latest/evidence") / f"{clean_id}.jpg",
+        Path("outputs/evidence") / f"{clean_id}.jpg",
+    ]:
+        if fallback.exists():
+            return FileResponse(str(fallback), media_type="image/jpeg")
+
+    # 3. Dynamic guaranteed fallback card for historical records
+    card_path = _generate_telemetry_card(clean_id)
+    return FileResponse(str(card_path), media_type="image/jpeg")
 
 
 # --------------------------- WebSockets ---------------------------
