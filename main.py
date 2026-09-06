@@ -39,7 +39,7 @@ from ultralytics import YOLO
 from src.perception.depth_engine import DepthEngine
 from src.spatial.geo_projector import GeoProjector
 import src.runtime_config as CFG
-
+from src.schema import CLASS_NAMES as SCHEMA_CLASS_NAMES
 torch.set_grad_enabled(False)
 
 SCHEMA_VERSION = "2.0.0"
@@ -163,21 +163,17 @@ def get_compute_device() -> str:
 
 
 def resolve_model_weights() -> str:
-    candidates = [
-        "best.pt",
-        "runs/yolov8m_final_dataset/weights/best.pt",
-        "runs/yolov8s_5class/weights/best.pt",
-        "models/best.pt",
-        "weights/best.pt",
-    ]
-    for path in candidates:
-        if os.path.exists(path):
-            return path
-    raise FileNotFoundError(
-        "No trained weights found. Looked in: " + ", ".join(candidates) +
-        "\nRefusing to start with a fallback model — it would produce "
-        "detections for the wrong classes."
-    )
+    """Explicit path from config. No fallback search — on demo day the model
+    must be the one we tested, not whatever happens to be on disk."""
+    configured = CFG.get()["model"]["weights"]
+    if not os.path.exists(configured):
+        raise FileNotFoundError(
+            f"Configured weights not found: {configured}\n"
+            f"Set model.weights in config/runtime.json, or copy the file in.\n"
+            f"Refusing to fall back — a fallback would silently detect the "
+            f"wrong classes."
+        )
+    return configured
 
 
 DEVICE = get_compute_device()
@@ -189,9 +185,22 @@ print(f"[INIT] Weights: {MODEL_PATH}")
 yolo_model = YOLO(MODEL_PATH)
 print(f"[INIT] Classes: {yolo_model.names}")
 
-if len(yolo_model.names) != 5:
-    print(f"[WARNING] Model has {len(yolo_model.names)} classes, expected 5. "
-          f"Check you loaded the right weights file.")
+_expected = CFG.get()["model"]["expected_classes"]
+if len(yolo_model.names) != _expected:
+    raise RuntimeError(
+        f"Model has {len(yolo_model.names)} classes, expected {_expected}.\n"
+        f"Loaded: {MODEL_PATH}\nRefusing to start."
+    )
+
+_model_classes = list(yolo_model.names.values())
+_schema_classes = list(SCHEMA_CLASS_NAMES.values())
+if _model_classes != _schema_classes:
+    raise RuntimeError(
+        f"Class order mismatch — every detection would be mislabelled.\n"
+        f"  model:  {_model_classes}\n"
+        f"  schema: {_schema_classes}"
+    )
+print(f"[INIT] Class order verified against schema.")
 
 try:
     depth_engine = DepthEngine(device=DEVICE)

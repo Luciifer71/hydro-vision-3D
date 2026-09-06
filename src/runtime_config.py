@@ -35,6 +35,16 @@ CONFIG_PATH = Path("config/runtime.json")
 
 DEFAULTS: Dict[str, Any] = {
 
+    # ---- MODEL -------------------------------------------------------
+    # Explicit path, never a disk search. The machine we test on and the
+    # machine we demo from must load byte-identical weights. To fall back
+    # to the 8s, change this line and restart — no code edit.
+    "model": {
+        "weights": "models/frozen/yolov8m_5class_20260906.pt",
+        "expected_classes": 5,
+    },
+    # ---- CAMERA & PLATFORM -------------------------------------------
+
     # ---- CAMERA & PLATFORM -------------------------------------------
     # [DAY-OF] These drive every metric measurement. Wrong altitude means
     # wrong area, because area scales with altitude squared.

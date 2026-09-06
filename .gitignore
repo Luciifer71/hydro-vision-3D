@@ -2,55 +2,51 @@
 # HYDRO-VISION-3D — Git Ignore
 # ============================================================
 
-outputs/
-test_frames/
-annotation_frames/
-frontend/dist/
-.env
-*.png
-
-# Python
+# --- Python ---
 __pycache__/
 *.py[cod]
 *$py.class
 *.log
 
-# Virtual environments
+# --- Virtual environments ---
 .venv/
 venv/
 env/
 
-# OS / IDE
+# --- OS / IDE ---
 .DS_Store
 .vscode/
 .idea/
 Thumbs.db
 
-# Node / frontend
+# --- Node / frontend ---
 node_modules/
 frontend/dist/
 
-# Datasets and generated data
+# --- Datasets (large, transferred by hand) ---
 data/
 
-# Training outputs
+# --- Training outputs (large; curves + weights) ---
 runs/
 *.cache
 
-# Model weights / exported models
+# --- Model weights (50MB each; transferred by hand) ---
+# See models/README.md for what belongs where.
 *.pt
 *.engine
 *.onnx
 
-# Backups / archives
-*.zip
-.env
-models/*.pt
-runs/
-
-# Generated frontend / runtime artifacts
+# --- Runtime artifacts ---
+outputs/
 static/snapshots/
+test_frames/
+annotation_frames/
 
-# Allow intentionally committed model weights under models/
-!models/
-!models/*.pt
+# --- Secrets ---
+.env
+
+# --- Archives ---
+*.zip
+
+# --- Screenshots (repo root gets cluttered with these) ---
+/*.png
