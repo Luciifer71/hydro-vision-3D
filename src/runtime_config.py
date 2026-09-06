@@ -44,8 +44,6 @@ DEFAULTS: Dict[str, Any] = {
         "expected_classes": 5,
     },
     # ---- CAMERA & PLATFORM -------------------------------------------
-
-    # ---- CAMERA & PLATFORM -------------------------------------------
     # [DAY-OF] These drive every metric measurement. Wrong altitude means
     # wrong area, because area scales with altitude squared.
     "camera": {
