@@ -89,10 +89,11 @@ export default function MunicipalOperations() {
   const enrichedHazards = useMemo(() => {
     return hazards.map(h => {
       const type = h.class_name || h.type || 'unknown';
-      const rateInfo = MUNICIPAL_RATES[type] || { material: 'Aggregate', costPerM2: 1000 };
-      const area = Number(h.surface_area_m2) || 0;
+      const rateInfo = MUNICIPAL_RATES[type] || MUNICIPAL_RATES.potholes;
+      const areaM2 = h.area_m2 ?? h.surface_area_m2;
+      const area = areaM2 != null ? Number(areaM2) : null;
       
-      const estimatedCost = (area * rateInfo.costPerM2).toFixed(2);
+      const estimatedCost = area != null ? (area * rateInfo.costPerM2).toFixed(2) : '0.00';
       const ward = h.zone && h.zone !== '—' ? h.zone : WARDS[(h.track_id || 1) % 4 + 1];
 
       let slaHours = 72;
@@ -151,40 +152,6 @@ export default function MunicipalOperations() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-      {/* Role Authority Scope Notification Banner */}
-      <div 
-        style={{ 
-          background: isAdmin ? 'rgba(255, 184, 0, 0.08)' : 'rgba(0, 229, 255, 0.08)',
-          border: `1px solid ${isAdmin ? 'rgba(255, 184, 0, 0.35)' : 'rgba(0, 229, 255, 0.35)'}`,
-          padding: '8px 16px',
-          borderRadius: 'var(--radius-sm)',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          fontFamily: 'var(--font-mono)'
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ 
-            fontSize: '0.62rem', 
-            fontWeight: 900, 
-            padding: '2px 7px', 
-            borderRadius: 3, 
-            background: isAdmin ? '#ffb800' : '#00e5ff', 
-            color: '#000' 
-          }}>
-            {isAdmin ? 'COMMISSIONER AUDIT DESK' : 'FIELD INSPECTOR DESK'}
-          </span>
-          <span style={{ fontSize: '0.72rem', color: '#fff' }}>
-            {isAdmin 
-              ? `Authorized Administrator: ${currentUser?.name} (${currentUser?.designation}) — Full authority to dispatch contractors, approve budgets & grant official sign-offs.`
-              : `Active Field Operator: ${currentUser?.name} (${currentUser?.designation}) — Upload remediation evidence photos for Commissioner audit sign-off.`}
-          </span>
-        </div>
-        <span style={{ fontSize: '0.65rem', color: isAdmin ? 'var(--amber)' : 'var(--cyan)', fontWeight: 800 }}>
-          {isAdmin ? 'ROOT LEVEL PERMISSIONS' : 'WARD REMEDIATION VIEW'}
-        </span>
-      </div>
 
       {/* Betaflight-Style Command Header Banner */}
       <div 
@@ -427,7 +394,7 @@ export default function MunicipalOperations() {
                         ₹{parseFloat(h.estimatedCost).toLocaleString('en-IN')}
                       </div>
                       <div style={{ fontSize: '0.68rem', color: 'var(--text-faint)' }}>
-                        {h.surface_area_m2?.toFixed(1)} m² ({h.material})
+                        {(h.area_m2 ?? h.surface_area_m2) != null ? `${Number(h.area_m2 ?? h.surface_area_m2).toFixed(1)} m²` : (h.area_px != null ? `${Math.round(h.area_px)} px²` : '—')} ({h.material})
                       </div>
                     </td>
                     <td>

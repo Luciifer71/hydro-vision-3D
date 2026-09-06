@@ -90,7 +90,8 @@ export default function AlertsPage() {
                 </tr>
               ) : (
                 displayAlerts.map((h, i) => {
-                  const area = Number(h.surface_area_m2) || 0;
+                  const areaM2 = h.area_m2 ?? h.surface_area_m2;
+                  const areaText = areaM2 != null ? `${Number(areaM2).toFixed(1)} m²` : (h.area_px != null ? `${Math.round(h.area_px)} px²` : '—');
                   const sev = (h.severity || 'LOW').toLowerCase();
                   const clsKey = h.class_name || h.type;
                   const typeLabel = CONFIG.TYPE_LABELS[clsKey] || CONFIG.TYPE_LABELS[h.type] || clsKey;
@@ -104,7 +105,7 @@ export default function AlertsPage() {
                           {typeLabel.toUpperCase()}
                         </span>
                       </td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{area.toFixed(1)} m²</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{areaText}</td>
                       <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
                       <td>
                         <button 

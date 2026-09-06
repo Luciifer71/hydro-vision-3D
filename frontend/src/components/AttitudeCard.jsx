@@ -3,8 +3,8 @@ import AttitudeIndicator from './AttitudeIndicator.jsx';
 import { useStore } from '../store.js';
 
 export default function AttitudeCard({ pitch = 0, roll = 0 }) {
-  const { connectionStatus } = useStore();
-  const isDroneLive = connectionStatus === 'LIVE';
+  const { connectionStatus, feedMode } = useStore();
+  const isDroneLive = feedMode === 'live' && connectionStatus === 'LIVE' && (pitch !== 0 || roll !== 0);
 
   return (
     <div className="bf-fieldset">

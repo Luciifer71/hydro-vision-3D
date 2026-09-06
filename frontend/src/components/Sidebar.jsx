@@ -155,15 +155,22 @@ export default function Sidebar() {
       <div className="sidebar-connect-slot">
         <div style={{ position: 'relative' }} ref={portMenuRef}>
           <button 
-            className={`bf-connect-btn ${isConnected ? 'connected' : ''}`}
+            className={`bf-connect-btn ${isConnected ? 'is-connected' : 'is-disconnected'}`}
             onClick={handleConnectToggle}
-            title={isConnected ? 'Click to Disconnect Stream' : 'Click to Connect to Live Drone Stream (Port 8000)'}
+            title={isConnected ? 'Status: Connected (Click to Disconnect)' : 'Status: Disconnected (Click to Connect)'}
           >
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <path d="M7 17l9.2-9.2M17 17V7H7" />
-              </svg>
-              <span>{isConnected ? 'Disconnect' : 'Connect'}</span>
+              {isConnected ? (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M5 12l5 5L20 7" />
+                </svg>
+              ) : (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <path d="M18.36 6.64a9 9 0 0 0-12.73 0" />
+                  <line x1="1" y1="1" x2="23" y2="23" />
+                </svg>
+              )}
+              <span>{isConnected ? 'Connected' : 'Disconnected'}</span>
             </div>
             <div 
               style={{ padding: '2px 4px', cursor: 'pointer', opacity: 0.8 }}
@@ -171,7 +178,7 @@ export default function Sidebar() {
                 e.stopPropagation();
                 setShowPortMenu(!showPortMenu);
               }}
-              title="Select Communications Port or Terminate Stream"
+              title="Open Connection Options Menu"
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
                 <polyline points="6 9 12 15 18 9" />
@@ -351,7 +358,7 @@ export default function Sidebar() {
 
         <div className="status-row" style={{ marginTop: 6, fontSize: '0.68rem', color: 'var(--text-muted)' }}>
           <span style={{ fontFamily: 'var(--font-mono)' }}>
-            {isLive ? `${telemetry.satellites || 12} SAT` : 'RECORDED'}
+            {isLive && telemetry?.satellites != null ? `${telemetry.satellites} SAT` : 'RECORDED'}
           </span>
           <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', color: 'var(--amber)' }}>
             FR #{currentState?.frame_id ?? 0}

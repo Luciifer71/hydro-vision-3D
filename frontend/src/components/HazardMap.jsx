@@ -35,6 +35,13 @@ const TILE_LAYERS = {
     maxZoom: 19,
     attribution: '© CARTO',
   },
+  'osm': {
+    name: 'OSM',
+    url: 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
+    subdomains: ['a', 'b', 'c'],
+    maxZoom: 19,
+    attribution: '© OpenStreetMap',
+  },
 };
 
 export default function HazardMap({ fullpage = false }) {
@@ -44,10 +51,11 @@ export default function HazardMap({ fullpage = false }) {
   const markersRef = useRef(new Map());
   const droneMarkerRef = useRef(null);
   const trajectoryRef = useRef(null);
+  const [selectedHazard, setSelectedHazard] = useState(null);
 
   const [activeLayer, setActiveLayer] = useState('google-hybrid');
-  const [selectedHazard, setSelectedHazard] = useState(null);
-  const { hazards = [], telemetry = {}, trajectory = [], currentPage, connectionStatus } = useStore();
+  const { hazards = [], telemetry = {}, trajectory = [], currentPage, connectionStatus, feedMode } = useStore();
+  const isLiveHardware = feedMode === 'live' && connectionStatus === 'LIVE' && telemetry?.latitude != null && telemetry?.longitude != null;
 
   // Helper to extract coordinates safely from various backend payload structures
   const extractCoords = (h) => {
@@ -126,17 +134,19 @@ export default function HazardMap({ fullpage = false }) {
     }).addTo(map);
   }, [activeLayer]);
 
-  // Update Hazard Markers in Real-Time
+  // Update Hazard Markers in Real-Time & Auto-Fit
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
     const markers = markersRef.current;
 
     const currentIds = new Set();
+    const points = [];
 
     hazards.forEach((h, index) => {
       const coords = extractCoords(h);
       if (!coords) return;
+      points.push([coords.lat, coords.lon]);
 
       const hazardId = (h.track_id != null && h.track_id !== '') ? String(h.track_id) : (h.hazard_id || `HAZ-${index}`);
       currentIds.add(hazardId);
@@ -173,12 +183,29 @@ export default function HazardMap({ fullpage = false }) {
         markers.delete(id);
       }
     }
+
+    // Auto-center bounds if points exist
+    if (points.length > 0) {
+      if (points.length === 1) {
+        map.setView(points[0], 17);
+      } else {
+        map.fitBounds(points, { padding: [30, 30], maxZoom: 18 });
+      }
+    }
   }, [hazards]);
 
-  // Live Drone Position Marker
+  // Live Drone Position Marker (Live Hardware Only)
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map || !telemetry.latitude || !telemetry.longitude) return;
+    if (!map) return;
+
+    if (!isLiveHardware || !telemetry.latitude || !telemetry.longitude) {
+      if (droneMarkerRef.current) {
+        map.removeLayer(droneMarkerRef.current);
+        droneMarkerRef.current = null;
+      }
+      return;
+    }
 
     const lat = telemetry.latitude;
     const lon = telemetry.longitude;
@@ -220,12 +247,20 @@ export default function HazardMap({ fullpage = false }) {
         </div>
       `);
     }
-  }, [telemetry.latitude, telemetry.longitude, telemetry.heading, telemetry.altitude, telemetry.speed]);
+  }, [isLiveHardware, telemetry.latitude, telemetry.longitude, telemetry.heading, telemetry.altitude, telemetry.speed]);
 
   // Live Drone Flight Trajectory
   useEffect(() => {
     const map = mapInstanceRef.current;
-    if (!map || !trajectory || trajectory.length === 0) return;
+    if (!map) return;
+
+    if (!isLiveHardware || !trajectory || trajectory.length === 0) {
+      if (trajectoryRef.current) {
+        map.removeLayer(trajectoryRef.current);
+        trajectoryRef.current = null;
+      }
+      return;
+    }
 
     if (!trajectoryRef.current) {
       trajectoryRef.current = L.polyline(trajectory, {

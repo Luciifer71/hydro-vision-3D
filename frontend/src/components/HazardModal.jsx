@@ -93,8 +93,19 @@ export default function HazardModal({ hazard, onClose }) {
             <div style={{ background: '#1a1a1a', border: '1px solid #333', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column' }}>
               <span style={{ fontSize: '0.7rem', color: '#888', textTransform: 'uppercase', fontWeight: 600, letterSpacing: '0.5px', marginBottom: '4px' }}>Spatial Area</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                <span style={{ fontSize: '1.25rem', color: '#fff', fontWeight: 700 }}>{hazard.surface_area_m2 != null ? Number(hazard.surface_area_m2).toFixed(2) : '—'}</span>
-                <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>m²</span>
+                {(hazard.area_m2 ?? hazard.surface_area_m2) != null ? (
+                  <>
+                    <span style={{ fontSize: '1.25rem', color: '#fff', fontWeight: 700 }}>{Number(hazard.area_m2 ?? hazard.surface_area_m2).toFixed(2)}</span>
+                    <span style={{ fontSize: '0.8rem', color: '#10b981', fontWeight: 600 }}>m²</span>
+                  </>
+                ) : hazard.area_px != null ? (
+                  <>
+                    <span style={{ fontSize: '1.25rem', color: '#fff', fontWeight: 700 }}>{Math.round(hazard.area_px).toLocaleString()}</span>
+                    <span style={{ fontSize: '0.8rem', color: '#f59e0b', fontWeight: 600 }}>px²</span>
+                  </>
+                ) : (
+                  <span style={{ fontSize: '1.25rem', color: 'var(--text-faint)', fontWeight: 700 }}>—</span>
+                )}
               </div>
             </div>
             

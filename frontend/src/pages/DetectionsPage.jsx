@@ -54,8 +54,8 @@ export default function DetectionsPage() {
     const sevA = severityWeight[(a.severity || 'LOW').toUpperCase()] || 1;
     const sevB = severityWeight[(b.severity || 'LOW').toUpperCase()] || 1;
     if (sevA !== sevB) return sevB - sevA;
-    const areaA = Number(a.surface_area_m2 || 0);
-    const areaB = Number(b.surface_area_m2 || 0);
+    const areaA = Number(a.area_m2 ?? a.surface_area_m2 ?? a.area_px ?? 0);
+    const areaB = Number(b.area_m2 ?? b.surface_area_m2 ?? b.area_px ?? 0);
     return areaB - areaA;
   });
 
@@ -116,21 +116,19 @@ export default function DetectionsPage() {
 
           <button 
             onClick={handleSupabaseSync}
-            disabled={isSyncing || streamRunning || hazards.length === 0}
+            disabled={isSyncing || hazards.length === 0}
             className="btn btn-primary"
             style={{ 
               fontSize: '0.75rem', 
               padding: '7px 14px',
               whiteSpace: 'nowrap',
-              background: streamRunning ? 'rgba(255,255,255,0.06)' : undefined,
-              color: streamRunning ? 'var(--text-faint)' : undefined,
-              cursor: streamRunning ? 'not-allowed' : 'pointer'
+              cursor: isSyncing ? 'wait' : 'pointer'
             }}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
               <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
             </svg>
-            {streamRunning ? 'Streaming (Locked)' : isSyncing ? 'Syncing...' : 'Sync to Supabase Cloud'}
+            {isSyncing ? 'Syncing...' : 'Sync to Supabase Cloud'}
           </button>
         </div>
 
@@ -160,7 +158,8 @@ export default function DetectionsPage() {
                 </tr>
               ) : (
                 displayList.map((h, idx) => {
-                  const area = Number(h.surface_area_m2) || 0;
+                  const areaM2 = h.area_m2 ?? h.surface_area_m2;
+                  const areaText = areaM2 != null ? `${Number(areaM2).toFixed(1)} m²` : (h.area_px != null ? `${Math.round(h.area_px)} px²` : '—');
                   const sev = (h.severity || 'LOW').toLowerCase();
                   const lat = h.location?.latitude ?? h.latitude;
                   const lon = h.location?.longitude ?? h.longitude;
@@ -177,12 +176,12 @@ export default function DetectionsPage() {
                         </span>
                       </td>
                       <td style={{ fontFamily: 'var(--font-mono)' }}>{((h.confidence ?? 1) * 100).toFixed(1)}%</td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{area.toFixed(1)} m²</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{areaText}</td>
                       <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.68rem', color: 'var(--text-muted)' }}>
                         {typeof lat === 'number' ? lat.toFixed(5) : '—'}, {typeof lon === 'number' ? lon.toFixed(5) : '—'}
                       </td>
                       <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{h.priority_score ?? (area * 10).toFixed(0)}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{h.priority_score ?? (areaM2 != null ? (areaM2 * 10).toFixed(0) : '—')}</td>
                       <td style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{h.zone || '—'}</td>
                       <td>
                         <span style={{ 

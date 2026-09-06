@@ -88,40 +88,21 @@ export default function Header() {
   const isDashboard = currentPage === 'dashboard';
   const isLive = feedMode === 'live';
   const isConnected = connectionStatus === 'LIVE';
+  const hasLiveTelemetry = isLive && isConnected && (telemetry?.battery != null || telemetry?.satellites != null);
 
-  const battPct = Math.round(telemetry?.battery || 85);
-  const battVoltage = (13.6 + (battPct / 100) * 3.2).toFixed(1);
-  const battColor = battPct > 40 ? '#10b981' : battPct > 20 ? '#f59e0b' : '#ef4444';
+  const battPct = telemetry?.battery != null ? Math.round(telemetry.battery) : null;
+  const battVoltage = battPct != null ? (13.6 + (battPct / 100) * 3.2).toFixed(1) : null;
+  const battColor = battPct != null ? (battPct > 40 ? '#10b981' : battPct > 20 ? '#f59e0b' : '#ef4444') : '#888';
 
   const handleVideoUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsProcessing(true);
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const response = await fetch('/api/upload-video', {
-        method: 'POST',
-        headers: {
-          'X-User-Role': currentUser?.role || 'admin'
-        },
-        body: formData,
-      });
-
-      if (response.status === 403) {
-        alert('Access Denied: Municipal Administrator authorization is required to ingest raw drone video.');
-        return;
-      }
-
-      if (response.ok) {
-        uploadVideo(file);
-      } else {
-        console.error('[ERROR] Backend rejected video file.');
-      }
+      await uploadVideo(file);
     } catch (error) {
-      console.error('[NETWORK ERROR] Video upload failed:', error);
+      console.error('[UPLOAD ERROR] Video ingestion failed:', error);
     } finally {
       setIsProcessing(false);
       if (fileInputRef.current) fileInputRef.current.value = '';
@@ -173,12 +154,12 @@ export default function Header() {
 
         {/* Avionics Annunciator Sensor Bank */}
         <div style={{ display: 'flex', gap: 6, paddingLeft: 12, borderLeft: '1px solid var(--border-medium)' }}>
-          <SensorAnnunciator label="Gyro" active={isConnected} />
-          <SensorAnnunciator label="Accel" active={isConnected} />
-          <SensorAnnunciator label="Mag" active={isConnected} />
-          <SensorAnnunciator label="Baro" active={isConnected} />
-          <SensorAnnunciator label="GPS" active={isConnected && (telemetry?.satellites || 0) >= 4} />
-          <SensorAnnunciator label="Sonar" active={isConnected} />
+          <SensorAnnunciator label="Gyro" active={hasLiveTelemetry} />
+          <SensorAnnunciator label="Accel" active={hasLiveTelemetry} />
+          <SensorAnnunciator label="Mag" active={hasLiveTelemetry} />
+          <SensorAnnunciator label="Baro" active={hasLiveTelemetry} />
+          <SensorAnnunciator label="GPS" active={hasLiveTelemetry && (telemetry?.satellites || 0) >= 4} />
+          <SensorAnnunciator label="Sonar" active={hasLiveTelemetry} />
         </div>
       </div>
 
@@ -192,30 +173,32 @@ export default function Header() {
           {time.toLocaleTimeString('en-US', { hour12: false })}
         </div>
 
-        {/* Battery Telemetry Widget */}
-        <div 
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: 7,
-            padding: '3px 9px',
-            borderRadius: 4,
-            background: 'rgba(18, 24, 36, 0.7)',
-            border: '1px solid var(--border-subtle)'
-          }}
-          title={`Battery Level: ${battPct}%\nVoltage: ${battVoltage}V (4S LIPO)`}
-        >
-          <div className="batt-bar">
-            <div className="batt-bar-fill" style={{ width: `${battPct}%`, background: battColor }} />
-            <div className="batt-tip" />
+        {/* Battery Telemetry Widget (Live Feed Only) */}
+        {hasLiveTelemetry && battPct != null && (
+          <div 
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: 7,
+              padding: '3px 9px',
+              borderRadius: 4,
+              background: 'rgba(18, 24, 36, 0.7)',
+              border: '1px solid var(--border-subtle)'
+            }}
+            title={`Battery Level: ${battPct}%\nVoltage: ${battVoltage}V (4S LIPO)`}
+          >
+            <div className="batt-bar">
+              <div className="batt-bar-fill" style={{ width: `${battPct}%`, background: battColor }} />
+              <div className="batt-tip" />
+            </div>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 800, color: battColor }}>
+              {battPct}%
+            </span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-faint)' }}>
+              {battVoltage}V
+            </span>
           </div>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 800, color: battColor }}>
-            {battPct}%
-          </span>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: '0.62rem', color: 'var(--text-faint)' }}>
-            {battVoltage}V
-          </span>
-        </div>
+        )}
 
         {/* Feed Mode Indicator / Switcher */}
         {isAdmin && currentPage !== 'municipal' && (

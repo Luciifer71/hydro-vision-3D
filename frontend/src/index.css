@@ -282,15 +282,11 @@ body {
 
 .bf-connect-btn {
   width: 100%;
-  background: linear-gradient(135deg, #10b981, #059669);
-  color: #061e14;
   font-weight: 800;
   font-size: 0.8rem;
   letter-spacing: 0.8px;
   padding: 8px 12px;
   border-radius: var(--radius-sm);
-  border: 1px solid #34d399;
-  box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
   cursor: pointer;
   display: flex;
   align-items: center;
@@ -298,17 +294,30 @@ body {
   transition: all 0.2s var(--ease-spring);
 }
 
-.bf-connect-btn:hover {
+.bf-connect-btn.is-connected {
+  background: linear-gradient(135deg, #10b981, #059669);
+  color: #061e14;
+  border: 1px solid #34d399;
+  box-shadow: 0 0 14px rgba(16, 185, 129, 0.35);
+}
+
+.bf-connect-btn.is-connected:hover {
   filter: brightness(1.1);
   transform: translateY(-1px);
   box-shadow: 0 0 20px rgba(16, 185, 129, 0.5);
 }
 
-.bf-connect-btn.connected {
+.bf-connect-btn.is-disconnected {
   background: linear-gradient(135deg, #ef4444, #dc2626);
-  border-color: #f87171;
+  border: 1px solid #f87171;
   color: #ffffff;
   box-shadow: 0 0 14px rgba(239, 68, 68, 0.35);
+}
+
+.bf-connect-btn.is-disconnected:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+  box-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
 }
 
 .sidebar-nav {

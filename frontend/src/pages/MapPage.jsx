@@ -5,8 +5,15 @@ import EmptySessionState from '../components/EmptySessionState.jsx';
 import ErrorBoundary from '../components/ErrorBoundary.jsx';
 
 export default function MapPage() {
-  const { hazards = [], currentState } = useStore();
+  const { hazards = [], currentState, fetchGeoJsonHazards } = useStore();
   const [currentTime, setCurrentTime] = useState('');
+
+  // Auto-fetch hazards if none loaded yet
+  useEffect(() => {
+    if (hazards.length === 0 && fetchGeoJsonHazards) {
+      fetchGeoJsonHazards();
+    }
+  }, []);
 
   // Live ticking clock for tracking telemetry updates
   useEffect(() => {
@@ -17,9 +24,9 @@ export default function MapPage() {
     return () => clearInterval(timer);
   }, []);
 
-  if (!currentState) return <EmptySessionState message="No Map Data Loaded" />;
-
-  const totalArea = hazards.reduce((s, h) => s + (Number(h.surface_area_m2) || 0), 0);
+  const validAreas = hazards.map(h => h.area_m2 ?? h.surface_area_m2).filter(a => a != null);
+  const totalArea = validAreas.reduce((s, a) => s + Number(a), 0);
+  const coverageAreaText = validAreas.length > 0 ? `${totalArea.toFixed(2)} m²` : '—';
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
@@ -27,7 +34,7 @@ export default function MapPage() {
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
         {[
           { label: 'Total Markers', value: hazards.length },
-          { label: 'Coverage Area', value: `${totalArea.toFixed(2)} m²` },
+          { label: 'Coverage Area', value: coverageAreaText },
           { label: 'Last Updated', value: currentTime || '—' },
         ].map(({ label, value }) => (
           <div className="kpi-card" key={label}>

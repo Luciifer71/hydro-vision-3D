@@ -141,7 +141,9 @@ export default function AnalyzeView() {
   };
 
   // Derived metrics
-  const totalArea = hazards.reduce((acc, curr) => acc + (Number(curr.surface_area_m2) || 0), 0);
+  const validAreas = hazards.map(curr => curr.area_m2 ?? curr.surface_area_m2).filter(a => a != null);
+  const totalArea = validAreas.reduce((acc, curr) => acc + Number(curr), 0);
+  const hasMetricArea = validAreas.length > 0;
   const summary = currentState?.summary || {};
   
   const { riskScore, riskLevel } = computeSessionRisk(hazards, summary);
@@ -152,12 +154,13 @@ export default function AnalyzeView() {
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "MUNICIPAL BRIEF - SESSION REPORT\r\n";
     csvContent += `Total Hazards,${hazards.length}\r\n`;
-    csvContent += `Total Area Affected (m2),${totalArea.toFixed(2)}\r\n`;
+    csvContent += `Total Area Affected (m2),${hasMetricArea ? totalArea.toFixed(2) : '—'}\r\n`;
     csvContent += `Session Risk Level,${riskLevel}\r\n\r\n`;
-    csvContent += "ID,Type,Latitude,Longitude,Area (m2),Confidence (%),Severity\r\n";
+    csvContent += "ID,Type,Latitude,Longitude,Area,Confidence (%),Severity\r\n";
     
     hazards.forEach((h, i) => {
-      const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : null;
+      const areaM2 = h.area_m2 ?? h.surface_area_m2;
+      const areaVal = areaM2 != null ? `${Number(areaM2).toFixed(2)} m2` : (h.area_px != null ? `${Math.round(h.area_px)} px2` : '—');
       const sev = h.severity ? h.severity.toUpperCase() : '—';
       const loc = h.location || {};
       const lat = loc.latitude ?? h.latitude ?? 0;
@@ -165,7 +168,7 @@ export default function AnalyzeView() {
       const formattedType = (h.class_name || h.type || 'unknown').replace('_', ' ').toUpperCase();
       const conf = h.confidence != null ? (h.confidence * 100).toFixed(1) : '—';
       const id = h.hazard_id || `HAZ-${i}`;
-      csvContent += `${id},${formattedType},${lat.toFixed(6)},${lon.toFixed(6)},${area != null ? area.toFixed(2) : '—'},${conf},${sev}\r\n`;
+      csvContent += `${id},${formattedType},${lat.toFixed(6)},${lon.toFixed(6)},"${areaVal}",${conf},${sev}\r\n`;
     });
     
     const encodedUri = encodeURI(csvContent);
@@ -349,7 +352,8 @@ export default function AnalyzeView() {
                   </tr>
                 ) : (
                   [...hazards].map((h, i) => {
-                    const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : null;
+                    const areaM2 = h.area_m2 ?? h.surface_area_m2;
+                    const areaText = areaM2 != null ? `${Number(areaM2).toFixed(2)} m²` : (h.area_px != null ? `${Math.round(h.area_px)} px²` : '—');
                     const sev = (h.severity || 'LOW').toLowerCase();
                     const loc = h.location || {};
                     const lat = loc.latitude ?? h.latitude;
@@ -370,7 +374,7 @@ export default function AnalyzeView() {
                           {typeof lat === 'number' ? lat.toFixed(4) : '—'}, {typeof lon === 'number' ? lon.toFixed(4) : '—'}
                         </td>
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>
-                          {area != null ? `${area.toFixed(2)} m²` : '—'}
+                          {areaText}
                         </td>
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.75rem' }}>
                           {h.confidence != null ? `${(h.confidence * 100).toFixed(1)}%` : '—'}

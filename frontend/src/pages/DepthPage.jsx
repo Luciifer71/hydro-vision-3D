@@ -13,15 +13,26 @@ export default function DepthPage() {
 
   const metrics = useMemo(() => {
     let totalArea = 0;
+    let totalAreaPx = 0;
     let maxDepthIndex = 0;
     let depthSum = 0;
     let depthCount = 0;
+    let metricCount = 0;
 
     const list = hazards.map((h, i) => {
-      const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : null;
+      const areaM2 = h.area_m2 ?? h.surface_area_m2;
+      const area = areaM2 != null ? Number(areaM2) : null;
+      const areaPx = h.area_px != null ? Number(h.area_px) : null;
       const depthIndex = h.relative_depth_index != null ? Number(h.relative_depth_index) : null;
+      const conf = h.confidence != null ? Number(h.confidence) : (h.confidence_max != null ? Number(h.confidence_max) : null);
 
-      if (area != null) totalArea += area;
+      if (area != null) {
+        metricCount++;
+        totalArea += area;
+      }
+      if (areaPx != null) {
+        totalAreaPx += areaPx;
+      }
       if (depthIndex != null) {
         if (depthIndex > maxDepthIndex) maxDepthIndex = depthIndex;
         depthSum += depthIndex;
@@ -32,15 +43,16 @@ export default function DepthPage() {
         id: h.hazard_id || h.track_id || `HAZ-${String(i + 1).padStart(4, '0')}`,
         className: h.class_name || h.type || 'unknown',
         area,
+        areaPx,
         depthIndex,
-        confidence: h.confidence != null ? h.confidence : null,
+        confidence: conf,
         passes: h.detections_count || 1,
         severity: h.severity || '—'
       };
     });
 
     const avgDepthIndex = depthCount > 0 ? depthSum / depthCount : 0;
-    return { list, totalArea, maxDepthIndex, avgDepthIndex };
+    return { list, totalArea, totalAreaPx, metricCount, maxDepthIndex, avgDepthIndex };
   }, [hazards]);
 
   if (!currentState && hazards.length === 0) {
@@ -93,8 +105,8 @@ export default function DepthPage() {
       {/* 4 Feature Overview Cards Grid */}
       <div className="info-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12 }}>
         <div className="info-card">
-          <span style={{ fontSize: '0.62rem', background: 'var(--green)', color: '#061e14', fontWeight: 800, padding: '2px 8px', borderRadius: 4, float: 'right' }}>Active</span>
-          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: 'var(--green)', textAlign: 'left', fontWeight: 800 }}>Relative Depth Index</h4>
+          <span style={{ fontSize: '0.62rem', background: 'var(--amber)', color: '#0b0e14', fontWeight: 800, padding: '2px 8px', borderRadius: 4, float: 'right' }}>Active</span>
+          <h4 style={{ fontSize: '0.88rem', marginBottom: 6, color: 'var(--amber)', textAlign: 'left', fontWeight: 800 }}>Relative Depth Index</h4>
           <p style={{ fontSize: '0.75rem', color: 'var(--text-muted)', lineHeight: 1.5, textAlign: 'left' }}>
             Estimates monocular depth from single drone frames using Depth Anything V2. Normalized unitless index (0.0 to 1.0).
           </p>
@@ -129,7 +141,9 @@ export default function DepthPage() {
       <div className="kpi-grid">
         <div className="kpi-card">
           <span className="kpi-label">Cumulative Footprint</span>
-          <div className="kpi-value" style={{ color: 'var(--amber)' }}>{metrics.totalArea.toFixed(1)} m²</div>
+          <div className="kpi-value" style={{ color: 'var(--amber)' }}>
+            {metrics.totalArea > 0 ? `${metrics.totalArea.toFixed(1)} m²` : (metrics.totalAreaPx > 0 ? `${metrics.totalAreaPx.toFixed(0)} px²` : '—')}
+          </div>
         </div>
         <div className="kpi-card">
           <span className="kpi-label">Average Depth Index</span>
@@ -169,7 +183,7 @@ export default function DepthPage() {
               <tr>
                 <th>Hazard ID</th>
                 <th>Classification</th>
-                <th>Surface Area (m²)</th>
+                <th>Surface Area</th>
                 <th>Depth Index</th>
                 <th>Confidence</th>
                 <th>Depression Profile</th>
@@ -191,7 +205,9 @@ export default function DepthPage() {
                         {item.className.replace(/_/g, ' ').toUpperCase()}
                       </span>
                     </td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>{item.area != null ? `${item.area.toFixed(1)} m²` : '—'}</td>
+                    <td style={{ fontFamily: 'var(--font-mono)' }}>
+                      {item.area != null ? `${item.area.toFixed(1)} m²` : (item.areaPx != null ? `${Number(item.areaPx).toFixed(0)} px²` : '—')}
+                    </td>
                     <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: (item.depthIndex != null && item.depthIndex > 0.7) ? 'var(--danger)' : 'var(--warning)' }}>
                       {item.depthIndex != null ? item.depthIndex.toFixed(3) : '—'}
                     </td>

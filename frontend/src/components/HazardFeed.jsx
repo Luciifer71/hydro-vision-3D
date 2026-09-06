@@ -23,7 +23,8 @@ export default function HazardFeed({ hazards = [], activeHazards = 0 }) {
           </div>
         ) : (
           displayList.map((h, i) => {
-            const area = Number(h.surface_area_m2 || 0);
+            const areaM2 = h.area_m2 ?? h.surface_area_m2;
+            const areaText = areaM2 != null ? `${Number(areaM2).toFixed(1)} m²` : (h.area_px != null ? `${Math.round(h.area_px)} px²` : '—');
             const sev = (h.severity || 'LOW').toUpperCase();
             const className = (h.class_name || h.type || 'HAZARD').replace(/_/g, ' ');
 
@@ -54,7 +55,7 @@ export default function HazardFeed({ hazards = [], activeHazards = 0 }) {
                     </span>
                     <span style={{ color: 'var(--text-faint)' }}>·</span>
                     <span style={{ color: 'var(--amber)', fontFamily: 'var(--font-mono)', fontSize: '0.72rem', fontWeight: 600 }}>
-                      {area.toFixed(1)} m²
+                      {areaText}
                     </span>
                   </div>
                   <span style={{ fontSize: '0.65rem', color: 'var(--text-muted)', textTransform: 'capitalize' }}>

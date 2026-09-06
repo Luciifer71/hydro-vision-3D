@@ -1,9 +1,10 @@
 import { useStore } from '../store.js';
 
 export default function BottomBar() {
-  const { connectionStatus, currentState, telemetry, streamRunning } = useStore();
+  const { connectionStatus, feedMode, currentState, telemetry, streamRunning } = useStore();
+  const isLive = feedMode === 'live' && connectionStatus === 'LIVE' && (telemetry?.satellites != null || telemetry?.battery != null);
   const frameId = currentState?.frame_id ?? 0;
-  const uptime = streamRunning ? `${Math.floor(telemetry.flightTime / 60)}:${Math.floor(telemetry.flightTime % 60).toString().padStart(2, '0')}` : '00:00';
+  const uptime = streamRunning ? `${Math.floor((telemetry?.flightTime || 0) / 60)}:${Math.floor((telemetry?.flightTime || 0) % 60).toString().padStart(2, '0')}` : '00:00';
 
   return (
     <div className="bottom-bar">
@@ -31,12 +32,12 @@ export default function BottomBar() {
       </div>
       <div className="bottom-bar-item">
         <span className="label">SAT:</span>
-        <span className="value">{telemetry.satellites}</span>
+        <span className="value">{isLive && telemetry?.satellites != null ? telemetry.satellites : '—'}</span>
       </div>
       <div className="bottom-bar-item">
         <span className="label">BATT:</span>
-        <span className="value" style={{ color: telemetry.battery > 40 ? '#10b981' : telemetry.battery > 20 ? '#ffbb00' : '#cc0000' }}>
-          {Math.round(telemetry.battery)}%
+        <span className="value" style={{ color: isLive && telemetry?.battery != null ? (telemetry.battery > 40 ? '#10b981' : telemetry.battery > 20 ? '#ffbb00' : '#cc0000') : '#94a3b8' }}>
+          {isLive && telemetry?.battery != null ? `${Math.round(telemetry.battery)}%` : '—'}
         </span>
       </div>
       <div className="bottom-bar-item" style={{ marginLeft: 'auto' }}>

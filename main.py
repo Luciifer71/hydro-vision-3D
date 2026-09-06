@@ -348,6 +348,7 @@ class HazardRegistry:
                 "class_id": h["class_id"],
                 "class_name": h["class_name"],
                 "confidence_max": round(h["confidence_max"], 3),
+                "confidence": round(h["confidence_max"], 3),
                 "detections_count": h["detections_count"],
                 "first_frame": h["first_frame"],
                 "last_frame": h["last_frame"],
@@ -456,6 +457,8 @@ class SessionState:
         self.achieved_fps: float = 0.0
         self.stage_status: Dict[str, str] = {}
         self.streaming: bool = False      # guards against 2 concurrent pipelines
+        self.latest_frame_bytes: Optional[bytes] = None
+        self.latest_frame_id: int = 0
 
     def new_session(self, video_path: str) -> str:
         with self.lock:
@@ -507,6 +510,7 @@ class SessionState:
                     if self.total_frames else None)
         return {
             "session_id": self.session_id,
+            "frame_id": self.frame_count,
             "total_hazards": len(hz),
             "raw_tracks": self.registry.raw_track_count() if self.registry else 0,
             "total_area_m2": None,          # requires verified intrinsics
@@ -760,14 +764,25 @@ def generate_mjpeg_stream():
     stays responsive for WebSockets and REST."""
     global geo_projector
 
-    # Only one pipeline at a time. A second browser tab gets a notice frame
-    # instead of starting a competing GPU pass.
+    # If another thread is actively running the perception pipeline,
+    # stream the active frame buffer so multiple tabs/refreshes don't get locked out.
     if SESSION.streaming:
-        while SESSION.streaming:
-            yield _wrap(_standby_frame(
-                "PIPELINE ALREADY RUNNING - VIEW IN ORIGINAL TAB"))
-            time.sleep(1.0)
-        return
+        last_sent_id = -1
+        try:
+            while SESSION.streaming:
+                if SESSION.latest_frame_bytes is not None and SESSION.latest_frame_id != last_sent_id:
+                    last_sent_id = SESSION.latest_frame_id
+                    yield SESSION.latest_frame_bytes
+                time.sleep(0.02)
+        except (GeneratorExit, Exception):
+            pass
+        # If pipeline finished while we were waiting, fall through or return
+        if not SESSION.active:
+            msg = ("MISSION COMPLETE - REVIEW RESULTS BELOW"
+                   if SESSION.finished
+                   else "SYSTEM STANDBY - UPLOAD VIDEO TO START AI PIPELINE")
+            yield _wrap(_standby_frame(msg))
+            return
 
     cap = None
     writer = None
@@ -1133,7 +1148,10 @@ def generate_mjpeg_stream():
             ok, buf = cv2.imencode(".jpg", composite,
                                    [int(cv2.IMWRITE_JPEG_QUALITY), 70])
             if ok:
-                yield _wrap(buf.tobytes())
+                wrapped = _wrap(buf.tobytes())
+                SESSION.latest_frame_bytes = wrapped
+                SESSION.latest_frame_id = SESSION.frame_count
+                yield wrapped
 
             time.sleep(0.001)
 
@@ -1522,8 +1540,22 @@ async def _push_loop(ws: WebSocket, interval: float, label: str):
         while True:
             if ws.client_state.name != "CONNECTED":
                 break
+
+            # Listen for client-sent control packets (e.g. AI Sensitivity Gate slider)
+            try:
+                raw_msg = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
+                data = json.loads(raw_msg)
+                if data.get("type") == "CONFIDENCE_THRESHOLD":
+                    val = float(data.get("value", 0.20))
+                    if SESSION.cfg:
+                        SESSION.cfg["conf_floor"] = val
+                    print(f"[WS] Dynamic AI Sensitivity Gate set to {val}")
+            except (asyncio.TimeoutError, json.JSONDecodeError, ValueError, AttributeError):
+                pass
+
             await ws.send_json({
                 "schema_version": SCHEMA_VERSION,
+                "frame_id": SESSION.frame_count,
                 "summary": SESSION.summary(),
                 "hazards": SESSION.hazards(),
             })

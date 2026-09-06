@@ -13,7 +13,10 @@ import { computeSessionRisk } from '../lib/derive.js';
 export default function FlyView() {
   // 1. Extract telemetry and store state safely
   const store = useStore() || {};
-  const telemetry = store.telemetry || { pitch: 0, roll: 0 };
+  const isBackendConnected = store.connectionStatus === 'LIVE';
+  const isLive = store.feedMode === 'live';
+  const hasLiveAvionics = isLive && isBackendConnected && (store.telemetry?.altitude != null);
+  const telemetry = (hasLiveAvionics ? store.telemetry : null) || {};
   const currentState = store.currentState || {};
   const streamRunning = store.streamRunning || false;
   const videoPath = store.videoPath || '/sample-drone.mp4';
@@ -28,15 +31,14 @@ export default function FlyView() {
   const { riskScore, riskLevel } = computeSessionRisk(displayHazards, currentState.summary || {});
     
   const isCritical = riskLevel === 'CRITICAL';
-  const frameId = (currentState && currentState.frame_id !== undefined) ? currentState.frame_id : 0;
-  const isLive = store.connectionStatus === 'LIVE';
+  const frameId = (currentState && currentState.frame_id !== undefined) ? currentState.frame_id : (store.frame_id || 0);
 
   return (
     <div className="fly-layout" style={{ flex: 1, minHeight: 0 }}>
       {/* ── Video Feed & OSD Panel ── */}
       <div className="video-panel">
         <ErrorBoundary name="Video Player">
-          {isLive ? (
+          {isBackendConnected ? (
             <img 
               src="/api/stream_video" 
               alt="Hydro-Vision 3D AI Dual Perception Stream" 
@@ -58,7 +60,7 @@ export default function FlyView() {
             totalArea={totalArea}
             riskScore={riskScore}
             isCritical={isCritical}
-            streamRunning={isLive || streamRunning}
+            streamRunning={isBackendConnected || streamRunning}
             frameId={frameId}
           />
         </ErrorBoundary>

@@ -38,22 +38,32 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
     onStatusChange?.('READY');
   }, [onStatusChange]);
 
+  const handleTimeUpdate = useCallback(() => {
+    const v = videoRef.current;
+    if (!v) return;
+    const currentT = v.currentTime || 0;
+    const dur = v.duration || 1;
+    const fps = videoInfo?.fps || 30;
+    const frameNum = Math.floor(currentT * fps);
+
+    onFrameUpdate?.({
+      frameId: frameNum,
+      currentTime: currentT,
+      duration: dur,
+      width: v.videoWidth,
+      height: v.videoHeight,
+      progress: dur > 0 ? currentT / dur : 0,
+    });
+  }, [onFrameUpdate, videoInfo]);
+
   // Animation frame loop to push frame updates
   const tick = useCallback(() => {
     const v = videoRef.current;
     if (v && !v.paused && !v.ended) {
-      const frameNum = Math.floor(v.currentTime * (videoInfo?.fps || 30));
-      onFrameUpdate?.({
-        frameId: frameNum,
-        currentTime: v.currentTime,
-        duration: v.duration,
-        width: v.videoWidth,
-        height: v.videoHeight,
-        progress: v.duration > 0 ? v.currentTime / v.duration : 0,
-      });
+      handleTimeUpdate();
     }
     rafRef.current = requestAnimationFrame(tick);
-  }, [onFrameUpdate, videoInfo]);
+  }, [handleTimeUpdate]);
 
   useEffect(() => {
     rafRef.current = requestAnimationFrame(tick);
@@ -62,13 +72,11 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
     };
   }, [tick]);
 
-  // Load sample hazards if playing the default sample video
+  // Load hazard telemetry for the video session if hazards store is currently empty
   useEffect(() => {
-    if (src === '/sample-drone.mp4') {
-      const storeState = useStore.getState();
-      if (storeState.hazards.length === 0 && storeState.fetchGeoJsonHazards) {
-        storeState.fetchGeoJsonHazards();
-      }
+    const storeState = useStore.getState();
+    if (storeState.hazards.length === 0 && storeState.fetchGeoJsonHazards) {
+      storeState.fetchGeoJsonHazards();
     }
   }, [src]);
 
@@ -231,6 +239,7 @@ export default function VideoPlayer({ src = '/sample-drone.mp4', onFrameUpdate, 
         loop
         playsInline
         onLoadedMetadata={handleLoadedMetadata}
+        onTimeUpdate={handleTimeUpdate}
         onError={handleError}
         onEnded={handleEnded}
       />

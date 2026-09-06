@@ -66,28 +66,36 @@ export function parseGeoJsonFeatures(geojson) {
     const lon = coords[0];
     const lat = coords[1];
     const className = props.class_name || props.type || 'unknown';
-    const confidence = props.confidence != null ? props.confidence : null;
+    const confidence = props.confidence != null ? Number(props.confidence) : (props.confidence_max != null ? Number(props.confidence_max) : null);
     const detectionsCount = props.detections_count || 1;
     const hazardId = props.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
 
-    const area = props.surface_area_m2 != null ? Number(props.surface_area_m2) : null;
-    const severity = props.severity || '—';
+    const areaM2 = props.area_m2 != null ? Number(props.area_m2) : (props.surface_area_m2 != null ? Number(props.surface_area_m2) : null);
+    const areaPx = props.area_px != null ? Number(props.area_px) : null;
+    const depthIndex = props.relative_depth_index != null ? Number(props.relative_depth_index) : null;
+    const severity = props.severity_band || props.severity || '—';
 
     return {
       hazard_id: hazardId,
-      track_id: idx + 1,
+      track_id: props.track_id || idx + 1,
       type: className,
       class_name: className,
       confidence: confidence,
       detections_count: detectionsCount,
-      surface_area_m2: area,
+      area_m2: areaM2,
+      area_px: areaPx,
+      surface_area_m2: areaM2,
+      relative_depth_index: depthIndex,
       severity: severity,
-      priority_score: Math.round(confidence * 100),
+      severity_band: severity,
+      priority_score: props.priority_score || (confidence != null ? Math.round(confidence * 100) : 50),
       zone: props.zone || null,
       status: props.status || 'OPEN',
       first_detected: props.first_detected,
       last_detected: props.last_detected,
       location: { latitude: lat, longitude: lon },
+      latitude: lat,
+      longitude: lon,
       raw_feature: feature,
     };
   });
@@ -173,14 +181,14 @@ export const useStore = create((set, get) => ({
   logs: ['Dashboard initialized'],
 
   telemetry: {
-    altitude: 24.5, latitude: 22.3072, longitude: 73.1812,
-    speed: 0, battery: 87, rssi: -62,
-    flightTime: 0, satellites: 12, heading: 245, verticalSpeed: 0, pitch: 2, roll: -1,
+    altitude: null, latitude: null, longitude: null,
+    speed: null, battery: null, rssi: null,
+    flightTime: 0, satellites: null, heading: null, verticalSpeed: null, pitch: null, roll: null,
   },
   trajectory: [],
 
   viewMode: 'fly',
-  feedMode: 'live',
+  feedMode: (typeof window !== 'undefined' && localStorage.getItem('hv_feed_mode')) || 'video',
   currentPage: typeof window !== 'undefined' && window.location.pathname.length > 1 ? window.location.pathname.replace('/', '') : 'dashboard',
   streamRunning: false,
   videoPath: '/sample-drone.mp4',
@@ -202,14 +210,22 @@ export const useStore = create((set, get) => ({
     set({ currentPage: page });
   },
   setViewMode: (mode) => set({ viewMode: mode }),
-  setFeedMode: (mode) => set({ feedMode: mode }),
+  setFeedMode: (mode) => {
+    if (typeof window !== 'undefined') localStorage.setItem('hv_feed_mode', mode);
+    set({ feedMode: mode });
+  },
   setAlertFilter: (filter) => set({ alertFilter: filter }),
   setDetectionSearch: (q) => set({ detectionSearch: q }),
   setDetectionTypeFilter: (t) => set({ detectionTypeFilter: t }),
-  setVideoPath: (p) => set({ videoPath: p, feedMode: p ? 'video' : 'live' }),
+  setVideoPath: (p) => {
+    const mode = p ? 'video' : 'live';
+    if (typeof window !== 'undefined') localStorage.setItem('hv_feed_mode', mode);
+    set({ videoPath: p, feedMode: mode });
+  },
   setSettings: (s) => set((state) => ({ settings: { ...state.settings, ...s } })),
 
   switchToLiveFeed: async () => {
+    if (typeof window !== 'undefined') localStorage.setItem('hv_feed_mode', 'live');
     get().addLog('Switching back to Live Drone Feed...');
     set({
       feedMode: 'live',
@@ -236,12 +252,21 @@ export const useStore = create((set, get) => ({
     const fileName = file.name;
     get().addLog(`Loaded pre-recorded video: ${fileName}`);
 
+    if (typeof window !== 'undefined') localStorage.setItem('hv_feed_mode', 'video');
+
     set({
       videoPath: blobUrl,
       feedMode: 'video',
       streamRunning: true,
       currentPage: 'dashboard',
       viewMode: 'fly',
+      frame_id: 0,
+      currentState: null,
+      telemetry: {
+        altitude: null, latitude: null, longitude: null,
+        speed: null, battery: null, rssi: null,
+        flightTime: 0, satellites: null, heading: null, verticalSpeed: null, pitch: null, roll: null,
+      },
       hazards: [],          
       timelineHistory: [],  
       riskHistory: [],      
@@ -263,9 +288,13 @@ export const useStore = create((set, get) => ({
       }
       if (res.ok) {
         get().addLog(`Uploaded ${fileName} to server — AI Pipeline Active`);
+        await get().fetchGeoJsonHazards();
+      } else {
+        await get().fetchGeoJsonHazards();
       }
     } catch (err) {
       console.warn('Backend upload warning:', err);
+      await get().fetchGeoJsonHazards();
     }
 
     get().addLog(`Analyzing recorded video feed: ${fileName}`);
@@ -279,31 +308,100 @@ export const useStore = create((set, get) => ({
       return { success: false, count: 0 };
     }
 
-    const payload = hazards.map(h => ({
-      hazard_id: h.hazard_id || h.track_id || 'HAZ-UNKNOWN',
-      class_name: h.class_name || h.type || 'unknown',
-      confidence: h.confidence != null ? Number(h.confidence) : null,
-      surface_area_m2: h.surface_area_m2 != null ? Number(h.surface_area_m2) : null,
-      latitude: Number(h.location?.latitude ?? h.latitude ?? 22.3072),
-      longitude: Number(h.location?.longitude ?? h.longitude ?? 73.1812),
-      severity: h.severity ? h.severity.toUpperCase() : '—',
-      status: h.status || 'OPEN',
-      zone: h.zone || '—'
-    }));
+    const CLASS_ID_MAP = {
+      potholes: 0,
+      pothole_dry: 0,
+      pothole_waterlogged: 1,
+      open_manhole: 2,
+      waterlogging_area: 3,
+      damaged_footpath: 4,
+      drainage_overflow: 5,
+    };
 
-    const { data, error } = await supabase
-      .from('mission_detections')
-      .upsert(payload, { onConflict: 'hazard_id' });
+    const pad = (n) => String(n).padStart(2, '0');
+    const d = new Date();
+    const nowIso = `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}.${String(d.getMilliseconds()).padStart(3, '0')}+05:30`;
 
-    if (error) {
-      console.error('[SUPABASE] Sync error:', error.message);
-      get().addLog(`Supabase sync failed: ${error.message}`);
-      return { success: false, error: error.message };
+    // 1. Primary: Upsert into 'hazards' table with exact schema & PostGIS POINT
+    const hazardsPayload = hazards.map((h, idx) => {
+      const lat = Number(h.location?.latitude ?? h.latitude ?? 22.3072);
+      const lon = Number(h.location?.longitude ?? h.longitude ?? 73.1812);
+      const cls = (h.class_name || h.type || 'potholes').toLowerCase();
+      const classId = CLASS_ID_MAP[cls] ?? 0;
+      const conf = h.confidence != null ? Number(Number(h.confidence).toFixed(4)) : 0.85;
+      const hid = h.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
+      const areaM2 = h.surface_area_m2 != null ? Number(h.surface_area_m2) : (h.area_m2 != null ? Number(h.area_m2) : null);
+
+      return {
+        hazard_id: hid,
+        class_id: classId,
+        class_name: h.class_name || h.type || 'potholes',
+        confidence: conf,
+        latitude: lat,
+        longitude: lon,
+        location: `POINT(${lon} ${lat})`,
+        detections_count: h.detections_count || 1,
+        estimated_volume_m3: areaM2 != null ? Number((areaM2 * 0.05).toFixed(4)) : null,
+        first_detected: h.first_detected || nowIso,
+        last_detected: h.last_detected || nowIso,
+      };
+    });
+
+    // 2. Secondary: Insert into 'mission_detections' table
+    const missionPayload = hazards.map((h, idx) => {
+      const lat = Number(h.location?.latitude ?? h.latitude ?? 22.3072);
+      const lon = Number(h.location?.longitude ?? h.longitude ?? 73.1812);
+      const cls = h.class_name || h.type || 'potholes';
+      const conf = h.confidence != null ? Number(Number(h.confidence).toFixed(4)) : 0.85;
+      const hid = h.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
+      const sev = (h.severity_band || h.severity || 'LOW').toUpperCase();
+      const areaM2 = h.surface_area_m2 != null ? Number(h.surface_area_m2) : (h.area_m2 != null ? Number(h.area_m2) : null);
+
+      return {
+        hazard_id: hid,
+        class_name: cls,
+        confidence: conf,
+        latitude: lat,
+        longitude: lon,
+        severity: ['LOW', 'MODERATE', 'HIGH', 'CRITICAL'].includes(sev) ? sev : 'LOW',
+        status: 'OPEN',
+        surface_area_m2: areaM2,
+        zone: h.zone || 'Ward-1',
+      };
+    });
+
+    let syncSuccess = false;
+    let syncedCount = 0;
+
+    try {
+      const resHazards = await supabase.from('hazards').upsert(hazardsPayload, { onConflict: 'hazard_id' });
+      if (!resHazards.error) {
+        syncSuccess = true;
+        syncedCount = hazardsPayload.length;
+        get().addLog(`[SUPABASE CLOUD] Synced ${syncedCount} hazards to hazards table`);
+      } else {
+        console.warn('[SUPABASE] Hazards table sync notice:', resHazards.error.message);
+      }
+    } catch (e) {
+      console.warn('[SUPABASE] Hazards upsert catch:', e);
     }
 
-    console.log(`[SUPABASE] Successfully persisted ${payload.length} records!`);
-    get().addLog(`Successfully synced ${payload.length} hazards to Supabase.`);
-    return { success: true, count: payload.length };
+    try {
+      const resMd = await supabase.from('mission_detections').insert(missionPayload);
+      if (!resMd.error) {
+        syncSuccess = true;
+        syncedCount = missionPayload.length;
+        get().addLog(`[SUPABASE CLOUD] Recorded ${syncedCount} items to mission_detections`);
+      }
+    } catch (e) {
+      console.warn('[SUPABASE] mission_detections catch:', e);
+    }
+
+    if (syncSuccess) {
+      return { success: true, count: syncedCount };
+    }
+    get().addLog('Supabase sync warning: please verify network connection');
+    return { success: false, error: 'Sync failed on all tables' };
   },
 
   addLog: (msg) => {
@@ -341,23 +439,13 @@ export const useStore = create((set, get) => ({
         riskHistory: [...state.riskHistory, { time: now, score: ({ LOW: 25, MODERATE: 50, HIGH: 75, CRITICAL: 100 }[riskLevel] || 25) }].slice(-CONFIG.CHART_HISTORY),
       };
     });
-
-    // Background Auto-Sync logic (debounced to 5 seconds)
-    const state = get();
-    if (state.streamRunning) {
-      const nowMs = Date.now();
-      if (nowMs - state.lastSupabaseSync > 5000) {
-        set({ lastSupabaseSync: nowMs });
-        get().syncHazardsToSupabase();
-      }
-    }
   },
 
   updateLocalVideoFrame: (frameInfo) => {
     set((state) => {
       const t = state.telemetry || {};
-      const fId = frameInfo.frameId ?? 0;
-      const time = frameInfo.currentTime ?? 0;
+      const fId = frameInfo.frameId ?? state.currentState?.frame_id ?? 0;
+      const time = frameInfo.currentTime ?? (fId / 30);
 
       const totalArea = state.hazards.reduce((sum, h) => sum + (Number(h.surface_area_m2) || 0), 0);
       const { riskScore, riskLevel } = computeSessionRisk(state.hazards, {});
@@ -376,11 +464,13 @@ export const useStore = create((set, get) => ({
           risk_score: riskScore,
           action: riskLevel === 'CRITICAL' ? 'Issue emergency response and traffic reroute.' : 'Dispatch local maintenance crew.',
           alert_count: state.hazards.filter(h => ['CRITICAL','HIGH','MODERATE'].includes((h.severity || 'LOW').toUpperCase())).length,
+          frames_processed: fId,
         },
         hazards: state.hazards,
       };
 
       return {
+        frame_id: fId,
         currentState: updatedState,
         streamRunning: true,
         telemetry: {
@@ -410,7 +500,7 @@ export const useStore = create((set, get) => ({
             currentState: {
               ...(state.currentState || {}),
               stream_status: 'LIVE',
-              frame_id: 1,
+              frame_id: state.currentState?.frame_id || 1,
               timestamp: Date.now() / 1000,
               summary: {
                 active_hazards: parsedHazards.length,
@@ -466,41 +556,62 @@ export const useStore = create((set, get) => ({
 
         const rawHazards = raw.telemetry || raw.hazards || [];
         const stageStatus = raw.stage_status || {};
-        
-        get().updateLocalVideoFrame({
-          frameId: raw.frame_id ?? 0,
-          currentTime: (raw.frame_id ?? 0) / 30,
-        });
+        const incomingFrameId = raw.frame_id ?? raw.summary?.frame_id ?? raw.summary?.frames_processed;
 
-        const incomingParsed = rawHazards.map((h, idx) => ({
-          hazard_id: h.id ?? `HAZ-${String(idx + 1).padStart(4, '0')}`,
-          track_id: h.id ?? idx + 1,
-          type: h.hazard ?? 'unknown',
-          class_name: h.hazard ?? 'unknown',
-          confidence: h.confidence != null ? h.confidence : null,
-          surface_area_m2: h.surface_area_m2 != null ? Number(h.surface_area_m2) : null,
-          severity: h.severity ? h.severity.toUpperCase() : '—',
-          status: 'OPEN',
-          latitude: h.latitude,
-          longitude: h.longitude,
-          location: { latitude: h.latitude, longitude: h.longitude },
-          last_detected: h.timestamp || new Date().toISOString(),
-        }));
+        const incomingParsed = rawHazards.map((h, idx) => {
+          const areaM2 = h.area_m2 != null ? Number(h.area_m2) : (h.surface_area_m2 != null ? Number(h.surface_area_m2) : null);
+          const areaPx = h.area_px != null ? Number(h.area_px) : null;
+          const depthIndex = h.relative_depth_index != null ? Number(h.relative_depth_index) : null;
+          const severityBand = h.severity_band || h.severity ? (h.severity_band || h.severity).toUpperCase() : '—';
+          const conf = h.confidence != null ? Number(h.confidence) : (h.confidence_max != null ? Number(h.confidence_max) : null);
+
+          return {
+            hazard_id: h.hazard_id ?? h.id ?? `HAZ-${String(idx + 1).padStart(4, '0')}`,
+            track_id: h.track_id ?? h.id ?? idx + 1,
+            type: h.class_name ?? h.hazard ?? 'unknown',
+            class_name: h.class_name ?? h.hazard ?? 'unknown',
+            confidence: conf,
+            detections_count: h.detections_count || 1,
+            area_m2: areaM2,
+            area_px: areaPx,
+            surface_area_m2: areaM2,
+            relative_depth_index: depthIndex,
+            severity: severityBand,
+            severity_band: severityBand,
+            status: h.status || 'OPEN',
+            latitude: h.latitude ?? h.location?.latitude,
+            longitude: h.longitude ?? h.location?.longitude,
+            location: { latitude: h.latitude ?? h.location?.latitude, longitude: h.longitude ?? h.location?.longitude },
+            last_detected: h.timestamp || new Date().toISOString(),
+          };
+        });
 
         set((state) => {
           const now = new Date().toLocaleTimeString('en-US', { hour12: false });
           const hazardMap = new Map(state.hazards.map((h) => [h.hazard_id, h]));
           incomingParsed.forEach((h) => hazardMap.set(h.hazard_id, h));
           const accumulatedHazards = Array.from(hazardMap.values());
-          const totalArea = accumulatedHazards.reduce((sum, h) => sum + (Number(h.surface_area_m2) || 0), 0);
+          const validAreas = accumulatedHazards.map(h => h.area_m2 ?? h.surface_area_m2).filter(a => a != null);
+          const totalArea = validAreas.reduce((sum, a) => sum + Number(a), 0);
           const { riskScore, riskLevel } = computeSessionRisk(accumulatedHazards, raw.summary || {});
+
+          const currentFId = incomingFrameId != null
+            ? incomingFrameId
+            : (state.currentState?.frame_id ?? state.frame_id ?? 0);
 
           return {
             stream_status: raw.status === 'online' ? 'LIVE' : 'STREAMING',
-            frame_id: raw.frame_id ?? 0,
+            frame_id: currentFId,
             stage_status: stageStatus,
             hazards: accumulatedHazards,
             
+            telemetry: state.feedMode === 'video' ? {
+              altitude: null, latitude: null, longitude: null,
+              speed: null, battery: null, rssi: null,
+              flightTime: state.telemetry?.flightTime || 0,
+              satellites: null, heading: null, verticalSpeed: null, pitch: null, roll: null,
+            } : state.telemetry,
+
             timelineHistory: [
               ...state.timelineHistory, 
               { time: now, count: accumulatedHazards.length }
@@ -513,6 +624,9 @@ export const useStore = create((set, get) => ({
 
             currentState: {
               ...(state.currentState || {}),
+              stream_status: raw.status === 'online' ? 'LIVE' : 'STREAMING',
+              frame_id: currentFId,
+              timestamp: Date.now() / 1000,
               summary: {
                 active_hazards: accumulatedHazards.length,
                 total_affected_area: totalArea,
@@ -522,11 +636,22 @@ export const useStore = create((set, get) => ({
                 risk_score: riskScore,
                 action: riskLevel === 'CRITICAL' ? 'Issue emergency response and traffic reroute.' : 'Dispatch local maintenance crew.',
                 alert_count: accumulatedHazards.length,
+                frames_processed: currentFId,
               },
               hazards: accumulatedHazards,
             }
           };
         });
+
+        // Background Auto-Sync logic (debounced to 8 seconds)
+        const st = get();
+        if (st.hazards && st.hazards.length > 0) {
+          const nowMs = Date.now();
+          if (nowMs - st.lastSupabaseSync > 8000 || raw.summary?.finished) {
+            set({ lastSupabaseSync: nowMs });
+            get().syncHazardsToSupabase();
+          }
+        }
       } catch (e) { console.error('WS parse:', e); }
     };
 
@@ -630,17 +755,19 @@ export const useStore = create((set, get) => ({
     }
   },
 
+  confidenceThreshold: 0.20,
   sendThreshold: (value) => {
+    set({ confidenceThreshold: value });
     const { wsRef, addLog } = get();
     if (wsRef && wsRef.readyState === WebSocket.OPEN) {
       try {
         wsRef.send(JSON.stringify({ type: 'CONFIDENCE_THRESHOLD', value }));
-        addLog(`AI Confidence Threshold set to ${value.toFixed(2)}`);
+        addLog(`AI Confidence Threshold set to ${(value * 100).toFixed(0)}% (${value.toFixed(2)})`);
       } catch (e) {
         console.warn('Failed to send slider value via WS', e);
       }
     } else {
-      addLog('Cannot set threshold: Not connected to Live Stream');
+      addLog(`AI Sensitivity Gate adjusted locally to ${(value * 100).toFixed(0)}% (${value.toFixed(2)})`);
     }
   },
 

@@ -6,3 +6,4 @@ export default function DashboardPage() {
   const { viewMode } = useStore();
   return viewMode === 'fly' ? <FlyView /> : <AnalyzeView />;
 }
+  

@@ -17,8 +17,8 @@ function getCardinal(deg) {
 export default function TelemetryBar() {
   const { telemetry, currentState, connectionStatus, feedMode, switchToLiveFeed, hazards } = useStore();
   const t = telemetry || {};
-  const isLive = feedMode === 'live';
   const isConnected = connectionStatus === 'LIVE';
+  const isLive = feedMode === 'live' && isConnected && (t.altitude != null || t.satellites != null);
 
   const { riskLevel } = computeSessionRisk(hazards || [], currentState?.summary || {});
   const riskColor = { LOW: 'good', MODERATE: 'warn', HIGH: 'warn', CRITICAL: 'danger' }[riskLevel] || 'good';
@@ -88,14 +88,14 @@ export default function TelemetryBar() {
           {/* Altitude */}
           <div className="tele-item">
             <span className="tele-label">ALT</span>
-            <span className="tele-value good">{(t.altitude || 24.5).toFixed(1)}</span>
+            <span className="tele-value good">{t.altitude != null ? t.altitude.toFixed(1) : '—'}</span>
             <span className="tele-unit">m</span>
           </div>
 
           {/* Ground Speed */}
           <div className="tele-item">
             <span className="tele-label">SPD</span>
-            <span className="tele-value">{(t.speed || 0).toFixed(1)}</span>
+            <span className="tele-value">{t.speed != null ? t.speed.toFixed(1) : '—'}</span>
             <span className="tele-unit">m/s</span>
           </div>
 
@@ -103,7 +103,7 @@ export default function TelemetryBar() {
           <div className="tele-item">
             <span className="tele-label">V.SPD</span>
             <span className={`tele-value ${vSpd > 0.3 ? 'good' : vSpd < -0.3 ? 'warn' : ''}`}>
-              {vSpd >= 0 ? '↑ +' : '↓ '}{vSpd.toFixed(1)}
+              {t.verticalSpeed != null ? `${vSpd >= 0 ? '↑ +' : '↓ '}${vSpd.toFixed(1)}` : '—'}
             </span>
             <span className="tele-unit">m/s</span>
           </div>
@@ -111,17 +111,19 @@ export default function TelemetryBar() {
           {/* Heading with Compass Cardinal */}
           <div className="tele-item">
             <span className="tele-label">HDG</span>
-            <span className="tele-value">{Math.round(t.heading || 245)}°</span>
-            <span className="tele-unit" style={{ color: 'var(--amber)', fontWeight: 800 }}>
-              {getCardinal(t.heading || 245)}
-            </span>
+            <span className="tele-value">{t.heading != null ? `${Math.round(t.heading)}°` : '—'}</span>
+            {t.heading != null && (
+              <span className="tele-unit" style={{ color: 'var(--amber)', fontWeight: 800 }}>
+                {getCardinal(t.heading)}
+              </span>
+            )}
           </div>
 
           {/* Pitch & Roll */}
           <div className="tele-item">
             <span className="tele-label">ATT</span>
             <span className="tele-value" style={{ fontSize: '0.8rem' }}>
-              P:{(t.pitch || 0).toFixed(1)}° R:{(t.roll || 0).toFixed(1)}°
+              {t.pitch != null && t.roll != null ? `P:${t.pitch.toFixed(1)}° R:${t.roll.toFixed(1)}°` : '—'}
             </span>
           </div>
 
@@ -129,7 +131,7 @@ export default function TelemetryBar() {
           <div className="tele-item">
             <span className="tele-label">LAT</span>
             <span className="tele-value" style={{ fontSize: '0.78rem' }}>
-              {(t.latitude || 22.3072).toFixed(5)}
+              {t.latitude != null ? t.latitude.toFixed(5) : '—'}
             </span>
           </div>
 
@@ -137,15 +139,15 @@ export default function TelemetryBar() {
           <div className="tele-item">
             <span className="tele-label">LON</span>
             <span className="tele-value" style={{ fontSize: '0.78rem' }}>
-              {(t.longitude || 73.1812).toFixed(5)}
+              {t.longitude != null ? t.longitude.toFixed(5) : '—'}
             </span>
           </div>
 
           {/* Satellites */}
           <div className="tele-item">
             <span className="tele-label">GNSS</span>
-            <span className={`tele-value ${(t.satellites || 12) >= 8 ? 'good' : 'warn'}`}>
-              {t.satellites || 12} 🛰️
+            <span className={`tele-value ${(t.satellites || 0) >= 8 ? 'good' : 'warn'}`}>
+              {t.satellites != null ? `${t.satellites} 🛰️` : '—'}
             </span>
           </div>
 
@@ -153,9 +155,9 @@ export default function TelemetryBar() {
           <div className="tele-item">
             <span className="tele-label">RSSI</span>
             <span className={`tele-value ${rssiClass}`}>
-              {rssiVal}
+              {t.rssi != null ? `${t.rssi}` : '—'}
             </span>
-            <span className="tele-unit">dBm</span>
+            <span className="tele-unit">{t.rssi != null ? 'dBm' : ''}</span>
           </div>
 
           {/* Flight Time */}
