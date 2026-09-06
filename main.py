@@ -3,22 +3,12 @@ HYDRO-VISION-3D — AI Perception Engine
 =======================================
 Live processing + permanent mission record, from one pass over the frames.
 
-What changed from the previous version:
-  + ByteTrack tracking with stable track IDs (was: predict, IDs collided per class)
-  + Hazard consolidation registry — N frames become ONE hazard record
-  + N-frame persistence gate — filters false positives without retraining
-  + PER-CLASS confidence thresholds — recall-starved classes get a lower bar
-  + Depth on its own slow cadence at native resolution (was ~95% of frame time)
-  + Real evidence crops saved per hazard at peak confidence
-  + Annotated video written to disk during the same pass (mission record)
-  + Session isolation — every run gets its own ID and output directory
-  + Honest geolocation — geo_source declared, synthetic paths badged
-  + Relative depth index (unitless 0-1) replacing fabricated volume
-  - Removed: volume_m3 = raw_volume * 0.1  (arbitrary constant)
-  - Removed: enhance_hazard_classification (HSV guesswork inventing a class)
-  - Fixed:  imgsz 960 -> 640 (matches training resolution)
-  - Fixed:  torch.cuda.amp.autocast deprecation
-  - Fixed:  geo_projector hardcoded to 1920x1080 regardless of actual video
+Design principles:
+  - One physical hazard = one track = one record (consolidation).
+  - If a value cannot be computed, it is None. Never a fallback constant.
+  - Every stage fails soft and reports why, rather than killing the pipeline.
+  - Runtime-tunable values live in config, read once per session, so they can
+    be changed on deployment day without editing code or restarting.
 """
 
 import asyncio
@@ -38,8 +28,9 @@ from typing import Any, Dict, List, Optional
 import cv2
 import numpy as np
 import torch
-from fastapi import FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect, Header, HTTPException
-from fastapi.responses import HTMLResponse, StreamingResponse, FileResponse
+from fastapi import (FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect,
+                     Header, HTTPException)
+from fastapi.responses import StreamingResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
 from pydantic import BaseModel
@@ -47,91 +38,101 @@ from ultralytics import YOLO
 
 from src.perception.depth_engine import DepthEngine
 from src.spatial.geo_projector import GeoProjector
-
-torch.set_grad_enabled(False)
 import src.runtime_config as CFG
 
+torch.set_grad_enabled(False)
+
+SCHEMA_VERSION = "2.0.0"
+
+
 # ===========================================================================
-# CONFIGURATION — every tunable in one place, no magic numbers below
+# CONFIGURATION
+#
+# Runtime-tunable values live in src/runtime_config.py and config/runtime.json,
+# and are read ONCE per session by _load_session_config() so a run stays
+# internally consistent. A change via POST /api/config takes effect on the
+# next run, not mid-video.
+#
+# Only genuinely fixed values remain as module constants here.
 # ===========================================================================
 
-# Per-class confidence. Measured validation recall/precision drives these:
-#   open_manhole       P 0.911  R 0.626  -> can afford a high bar
-#   drainage_overflow  P 0.665  R 0.681  -> healthy
-#   potholes           P 0.454  R 0.605  -> noisy, keep moderate
-#   damaged_footpath   P 0.451  R 0.425  -> recall-starved
-#   cracks             P 0.487  R 0.346  -> recall-starved
-#   waterlogging_area  P 0.674  R 0.338  -> worst recall, most important class
-# The N-frame persistence gate absorbs the extra noise the low bars let in.
-CLASS_CONF = {
-    "open_manhole":      0.35,
-    "drainage_overflow": 0.30,
-    "potholes":          0.25,
-    "damaged_footpath":  0.99,   # class not trained — effectively disabled
-    "waterlogging_area": 0.08,
-}
+DEFAULT_CLASS_CONF = 0.20      # used if a class is missing from class_conf
+DEFAULT_MAX_AREA_RATIO = 0.60  # used if a class is missing from max_area_ratio
 
-CONF_THRESHOLD = 0.05          # model runs wide open; CLASS_CONF does the filtering
-DEFAULT_CLASS_CONF = 0.20      # used if a class is missing from CLASS_CONF
-
-IMGSZ = 640                    # MUST match training resolution
-DETECT_EVERY_N = 1             #2 # 1 = every frame (best tracking), higher = faster
-DEPTH_EVERY_N = 15             # depth changes slowly; detection doesn't
-DEPTH_INPUT_WIDTH = 518        # Depth Anything's native size; 1080p input is wasted
-MIN_FRAMES_TO_CONFIRM = 8      #3 # persistence gate (counted in PROCESSED frames)
-MIN_DURATION_S = 1.5           # a real hazard is visible for at least ~1.5 seconds
-
-# Per-class area ceilings. A flooded street legitimately fills most of an
-# aerial frame; an open manhole never does. One global ratio was discarding
-# exactly the class with the worst recall.
-MAX_UPLOAD_MB = 500              # reject larger uploads outright
-MAX_DURATION_S = 600             # 10 min; longer videos are frame-skipped
-MAX_FRAMES_TO_PROCESS = 9000     # hard ceiling regardless of duration
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
-MAX_AREA_SAMPLES = 500           # cap per-track memory
 DOWNLOAD_NAME = "Hydro-Vision-3D_annotated.mp4"
-
-MAX_BOX_AREA_RATIO = {
-    "waterlogging_area": 0.95,
-    "drainage_overflow": 0.85,
-    "damaged_footpath":  0.70,
-    "potholes":          0.35,
-    "open_manhole":      0.25,
-}
-DEFAULT_MAX_AREA_RATIO = 0.60      # was 0.25 — that was deleting waterlogging_area
-TRACKER_CFG = "bytetrack.yaml"
-
-# Geolocation. No telemetry in our footage yet, so we simulate a flight path
-# and TAG IT. Set to False to emit null coordinates instead.
-USE_SIMULATED_FLIGHT = True
-SIM_START_LAT = 22.30720
-SIM_START_LON = 73.18200
-SIM_ALTITUDE_M = 25.0
-SIM_LAT_PER_FRAME = 0.000005
-SIM_LON_PER_FRAME = 0.000006
-CAMERA_HFOV_DEG = 84.0
-CAMERA_PITCH_DEG = -90.0       # nadir. Change if K-05 shows the camera is angled.
+MAX_DURATION_S = 600           # advisory only; longer videos are frame-sampled
 
 OUTPUT_ROOT = Path("outputs/sessions")
-LATEST_VIDEO = Path("outputs/latest_annotated.mp4")   # replaced every run
+LATEST_VIDEO = Path("outputs/latest_annotated.mp4")
 LATEST_HAZARDS = Path("outputs/latest_hazards.json")
-KEEP_SESSIONS = 3      # older session folders are pruned automatically
 DEFAULT_VIDEO_PATH = "data/raw_videos/master_video.mp4"
 
-SEVERITY_BANDS = [
-    (0.00, "LOW"),
-    (0.35, "MODERATE"),
-    (0.60, "HIGH"),
-    (0.82, "CRITICAL"),
-]
 
-CLASS_BASE_RISK = {
-    "open_manhole": 1.00,      # immediate danger to life
-    "waterlogging_area": 0.70,
-    "drainage_overflow": 0.65,
-    "potholes": 0.55,
-    "damaged_footpath": 0.40,
-}
+# --- Config accessors ------------------------------------------------------
+# Functions, not constants, so a POST /api/config is picked up without a
+# restart. Called outside the per-frame loop only.
+
+def cfg_limits() -> dict:
+    return CFG.get()["limits"]
+
+
+def max_upload_mb() -> int:
+    return int(cfg_limits()["max_upload_mb"])
+
+
+def keep_sessions() -> int:
+    return int(cfg_limits()["keep_sessions"])
+
+
+def keep_uploads() -> int:
+    return int(cfg_limits()["keep_uploads"])
+
+
+def _load_session_config() -> dict:
+    """Snapshot the whole config for one pipeline run.
+
+    Read once at session start so the run is internally consistent, and so the
+    exact configuration can be written into the session bundle. A hazard score
+    is only reproducible if the weights that produced it are recorded with it.
+    """
+    c = CFG.get()
+    det, trk, dep = c["detection"], c["tracking"], c["depth"]
+    cam, geo, sev = c["camera"], c["geo"], c["severity"]
+    return {
+        "imgsz": int(det["imgsz"]),
+        "detect_every_n": max(1, int(det["detect_every_n"])),
+        "conf_floor": float(det["model_conf_floor"]),
+        "class_conf": dict(det["class_conf"]),
+        "max_area_ratio": dict(det["max_area_ratio"]),
+        "default_max_area_ratio": float(det["default_max_area_ratio"]),
+
+        "min_duration_s": float(trk["min_duration_s"]),
+        "min_detections": int(trk["min_detections"]),
+        "tracker_cfg": trk["tracker_cfg"],
+        "max_area_samples": int(trk["max_area_samples"]),
+
+        "depth_enabled": bool(dep["enabled"]),
+        "depth_every_n": max(1, int(dep["every_n_frames"])),
+        "depth_input_width": int(dep["input_width"]),
+
+        "altitude_m": float(cam["altitude_m"]),
+        "altitude_known": bool(cam["altitude_known"]),
+        "hfov_deg": float(cam["hfov_deg"]),
+        "pitch_deg": float(cam["pitch_deg"]),
+
+        "geo_mode": geo["mode"],
+        "sim_start_lat": float(geo["sim_start_lat"]),
+        "sim_start_lon": float(geo["sim_start_lon"]),
+        "sim_lat_per_frame": float(geo["sim_lat_per_frame"]),
+        "sim_lon_per_frame": float(geo["sim_lon_per_frame"]),
+
+        "severity_weights": dict(sev["weights"]),
+        "class_base_risk": dict(sev["class_base_risk"]),
+        "severity_bands": [tuple(b) for b in sev["bands"]],
+
+        "max_frames_to_process": int(c["limits"]["max_frames_to_process"]),
+    }
 
 
 # ===========================================================================
@@ -140,7 +141,8 @@ CLASS_BASE_RISK = {
 
 app = FastAPI(
     title="Hydro-Vision 3D AI Perception Engine",
-    description="Live hazard detection, consolidation, spatial analysis and mission recording",
+    description="Live hazard detection, consolidation, spatial analysis "
+                "and mission recording",
 )
 
 app.add_middleware(
@@ -163,7 +165,8 @@ def get_compute_device() -> str:
 def resolve_model_weights() -> str:
     candidates = [
         "best.pt",
-        "runs/yolov8s_baseline/weights/best.pt",
+        "runs/yolov8m_final_dataset/weights/best.pt",
+        "runs/yolov8s_5class/weights/best.pt",
         "models/best.pt",
         "weights/best.pt",
     ]
@@ -187,7 +190,7 @@ yolo_model = YOLO(MODEL_PATH)
 print(f"[INIT] Classes: {yolo_model.names}")
 
 if len(yolo_model.names) != 5:
-    print(f"[WARNING] Model has {len(yolo_model.names)} classes, expected 6. "
+    print(f"[WARNING] Model has {len(yolo_model.names)} classes, expected 5. "
           f"Check you loaded the right weights file.")
 
 try:
@@ -208,14 +211,15 @@ geo_projector: Optional[GeoProjector] = None
 #
 # One physical hazard = one track = one record, accumulated across frames.
 # This is what turns thousands of boxes into a short, ranked worklist, and
-# what makes a 0.45-precision detector usable: false positives appear in one
-# or two frames and never pass the persistence gate.
+# what makes a moderate-precision detector usable: false positives appear in
+# one or two frames and never pass the persistence gate.
 # ===========================================================================
 
 class HazardRegistry:
-    def __init__(self, session_id: str, evidence_dir: Path):
+    def __init__(self, session_id: str, evidence_dir: Path, cfg: dict):
         self.session_id = session_id
         self.evidence_dir = evidence_dir
+        self.cfg = cfg
         self.evidence_dir.mkdir(parents=True, exist_ok=True)
         self._tracks: Dict[int, dict] = {}
         self._lock = threading.Lock()
@@ -259,7 +263,9 @@ class HazardRegistry:
             h["detections_count"] += 1
             h["last_frame"] = frame_id
             h["last_seen_s"] = round(t_s, 2)
-            if len(h["area_px_samples"]) < MAX_AREA_SAMPLES:
+            # Cap the sample list: a long video with persistent tracks would
+            # otherwise grow memory without bound.
+            if len(h["area_px_samples"]) < self.cfg["max_area_samples"]:
                 h["area_px_samples"].append(area_px)
             if depth_index is not None:
                 h["depth_samples"].append(depth_index)
@@ -284,7 +290,7 @@ class HazardRegistry:
             crop = frame[y1:y2, x1:x2]
             if crop.size == 0:
                 return
-            # Upscale tiny crops so they're legible in the UI
+            # Upscale tiny crops so they're legible in the UI.
             ch, cw = crop.shape[:2]
             if max(ch, cw) < 160:
                 s = 160.0 / max(ch, cw)
@@ -292,7 +298,8 @@ class HazardRegistry:
                                   interpolation=cv2.INTER_CUBIC)
             out = self.evidence_dir / f"{h['hazard_id']}.jpg"
             cv2.imwrite(str(out), crop, [int(cv2.IMWRITE_JPEG_QUALITY), 88])
-            h["evidence_image"] = f"/static/sessions/{self.session_id}/evidence/{h['hazard_id']}.jpg"
+            h["evidence_image"] = (f"/static/sessions/{self.session_id}"
+                                   f"/evidence/{h['hazard_id']}.jpg")
         except Exception as e:
             print(f"[EVIDENCE] Could not save crop for {h.get('hazard_id')}: {e}")
 
@@ -305,7 +312,8 @@ class HazardRegistry:
         return False
 
     def raw_track_count(self) -> int:
-        """Total tracks seen, including unconfirmed. Shows the consolidation ratio."""
+        """Total tracks seen, including unconfirmed. Shows the consolidation
+        ratio — the number behind our central claim."""
         with self._lock:
             return len(self._tracks)
 
@@ -316,13 +324,14 @@ class HazardRegistry:
 
         out = []
         for h in tracks:
-                        # Frame counts scale with detection rate; duration doesn't.
+            # Duration, not frame count, is the primary gate: frame counts
+            # scale with detect_every_n while real-world persistence does not.
             # A genuine hazard stays in view for over a second; a false
             # positive flickers for a few frames.
             duration = h["last_seen_s"] - h["first_seen_s"]
-            if duration < MIN_DURATION_S:
+            if duration < self.cfg["min_duration_s"]:
                 continue
-            if h["detections_count"] < MIN_FRAMES_TO_CONFIRM:
+            if h["detections_count"] < self.cfg["min_detections"]:
                 continue
             if not h["area_px_samples"]:
                 continue
@@ -344,12 +353,12 @@ class HazardRegistry:
                 "last_frame": h["last_frame"],
                 "first_seen_s": h["first_seen_s"],
                 "last_seen_s": h["last_seen_s"],
-                "duration_s": round(h["last_seen_s"] - h["first_seen_s"], 2),
+                "duration_s": round(duration, 2),
                 "bbox_px": h["bbox_px"],
                 "area_px": round(area_px, 1),
 
-                # Metric area needs verified intrinsics + altitude (K-14/K-15).
-                # Until then this is honestly null, and ranking uses pixels.
+                # Metric area needs verified intrinsics and altitude. Until
+                # then this is honestly null and ranking uses pixels.
                 "area_m2": None,
                 "gsd_m_per_px": None,
                 "area_reason": "no_intrinsics",
@@ -368,10 +377,13 @@ class HazardRegistry:
         return self._score(out)
 
     def _score(self, records: List[dict]) -> List[dict]:
-        """Severity from class risk, relative extent and persistence.
+        """Severity from class risk, relative extent, persistence and
+        confidence. Weights come from config so the score is reproducible
+        and explainable — see docs/SEVERITY.md.
 
         Ranked on PIXEL area percentile because metric area isn't available
-        yet — flagged as severity_basis 'relative' so nothing overstates itself.
+        yet, and flagged severity_basis 'relative' so nothing overstates
+        itself.
         """
         if not records:
             return records
@@ -379,6 +391,9 @@ class HazardRegistry:
         areas = sorted(r["area_px"] for r in records)
 
         def pct(v: float) -> float:
+            """Percentile within this session. Altitude-independent: raw size
+            would rank the same hazard differently at different flight
+            heights."""
             if len(areas) < 2:
                 return 0.5
             below = sum(1 for a in areas if a < v)
@@ -386,17 +401,24 @@ class HazardRegistry:
 
         max_dur = max((r["duration_s"] for r in records), default=0.0) or 1.0
 
+        w = self.cfg["severity_weights"]
+        risk = self.cfg["class_base_risk"]
+        bands = self.cfg["severity_bands"]
+
         for r in records:
-            base = CLASS_BASE_RISK.get(r["class_name"], 0.4)
+            base = risk.get(r["class_name"], 0.4)
             extent = pct(r["area_px"])
             persistence = min(1.0, r["duration_s"] / max_dur)
             conf = r["confidence_max"]
 
-            score = 0.45 * base + 0.25 * extent + 0.15 * persistence + 0.15 * conf
+            score = (w["class_base"] * base
+                     + w["extent"] * extent
+                     + w["persistence"] * persistence
+                     + w["confidence"] * conf)
             score = max(0.0, min(1.0, score))
 
             band = "LOW"
-            for threshold, name in SEVERITY_BANDS:
+            for threshold, name in bands:
                 if score >= threshold:
                     band = name
 
@@ -416,6 +438,7 @@ class HazardRegistry:
 class SessionState:
     def __init__(self):
         self.lock = threading.Lock()
+        self.cfg: dict = _load_session_config()
         self.session_id: Optional[str] = None
         self.video_path: str = DEFAULT_VIDEO_PATH
         self.out_dir: Optional[Path] = None
@@ -437,24 +460,32 @@ class SessionState:
     def new_session(self, video_path: str) -> str:
         with self.lock:
             sid = f"S-{datetime.now().strftime('%Y%m%d-%H%M%S')}"
+            # Config is snapshotted here, once, so the whole run is consistent
+            # and the bundle records exactly what produced its numbers.
+            self.cfg = _load_session_config()
             self.session_id = sid
             self.video_path = video_path
             self.out_dir = OUTPUT_ROOT / sid
             self.out_dir.mkdir(parents=True, exist_ok=True)
-            self.registry = HazardRegistry(sid, self.out_dir / "evidence")
+            self.registry = HazardRegistry(sid, self.out_dir / "evidence",
+                                           self.cfg)
             self.frame_count = 0
             self.finished = False
             self.started_at = datetime.now(timezone.utc).isoformat()
             self.finished_at = None
             self.achieved_fps = 0.0
+
+            depth_on = self.cfg["depth_enabled"] and DEPTH_AVAILABLE
+            geo_mode = self.cfg["geo_mode"]
             self.stage_status = {
                 "ingest": "ok",
                 "detect": "ok",
                 "track": "ok",
                 "consolidate": "ok",
-                "depth": "ok" if DEPTH_AVAILABLE else "failed: engine unavailable",
-                "area": "skipped: intrinsics not verified",
-                "geo": ("ok: simulated flight path" if USE_SIMULATED_FLIGHT
+                "depth": "ok" if depth_on else "skipped: disabled or unavailable",
+                "area": ("ok" if self.cfg["altitude_known"]
+                         else "skipped: altitude not set"),
+                "geo": (f"ok: {geo_mode}" if geo_mode != "none"
                         else "skipped: no telemetry"),
                 "severity": "ok",
                 "artifact": "ok",
@@ -484,6 +515,7 @@ class SessionState:
             "alert_count": sum(1 for b in bands if b in ("HIGH", "CRITICAL")),
             "frames_processed": self.frame_count,
             "total_frames": self.total_frames,
+            "frame_stride": self.frame_stride,
             "progress_pct": progress,
             "achieved_fps": round(self.achieved_fps, 1),
             "stage_status": self.stage_status,
@@ -495,7 +527,7 @@ class SessionState:
 
     def snapshot(self) -> dict:
         return {
-            "schema_version": "1.0.0",
+            "schema_version": SCHEMA_VERSION,
             "session": {
                 "session_id": self.session_id,
                 "video_path": self.video_path,
@@ -505,22 +537,21 @@ class SessionState:
                 "total_frames": self.total_frames,
                 "model_path": MODEL_PATH,
                 "device": DEVICE,
-                "class_conf": CLASS_CONF,
-                "imgsz": IMGSZ,
-                "detect_every_n": DETECT_EVERY_N,
-                "depth_every_n": DEPTH_EVERY_N,
-                "min_frames_to_confirm": MIN_FRAMES_TO_CONFIRM,
                 "started_at": self.started_at,
                 "finished_at": self.finished_at,
                 "stage_status": self.stage_status,
             },
+            # The full configuration that produced these numbers. Without it
+            # a severity score cannot be independently reproduced.
+            "config": self.cfg,
             "summary": self.summary(),
             "hazards": self.hazards(),
         }
 
     def geojson(self) -> dict:
         feats = []
-        for h in self.hazards():
+        hz = self.hazards()
+        for h in hz:
             if h["lat"] is None or h["lon"] is None:
                 continue
             feats.append({
@@ -543,13 +574,14 @@ class SessionState:
             "features": feats,
             "properties": {
                 "session_id": self.session_id,
-                "hazards_total": len(self.hazards()),
+                "hazards_total": len(hz),
                 "hazards_located": len(feats),
             },
         }
 
     def write_artifacts(self) -> None:
-        """Mission record — USP-6. Survives a crash as a partial but valid bundle."""
+        """Mission record — USP-6. Survives a crash as a partial but valid
+        bundle."""
         if not self.out_dir:
             return
         try:
@@ -626,8 +658,7 @@ def _publish_latest(out_dir: Optional[Path]) -> None:
     """Copy this session's outputs to a fixed 'latest' path.
 
     The per-session bundle is the permanent record; this is the convenience
-    copy you open for evaluation without hunting for a session ID. It is
-    replaced on every run.
+    copy, replaced on every run, that the download button serves.
     """
     if not out_dir:
         return
@@ -640,7 +671,8 @@ def _publish_latest(out_dir: Optional[Path]) -> None:
                 LATEST_VIDEO.unlink()
             shutil.copy2(src_video, LATEST_VIDEO)
             size_mb = LATEST_VIDEO.stat().st_size / (1024 * 1024)
-            print(f"[ARTIFACT] Latest annotated video -> {LATEST_VIDEO} ({size_mb:.1f} MB)")
+            print(f"[ARTIFACT] Latest annotated video -> {LATEST_VIDEO} "
+                  f"({size_mb:.1f} MB)")
 
         src_json = out_dir / "hazards.json"
         if src_json.exists():
@@ -651,9 +683,10 @@ def _publish_latest(out_dir: Optional[Path]) -> None:
         print(f"[ARTIFACT WARNING] Could not publish latest: {e}")
 
 
-def _prune_old_sessions(keep: int = KEEP_SESSIONS) -> None:
+def _prune_old_sessions(keep: Optional[int] = None) -> None:
     """Keep only the N most recent session folders. Annotated video is large
     and this fills a disk quickly otherwise."""
+    keep = keep_sessions() if keep is None else keep
     try:
         if not OUTPUT_ROOT.exists():
             return
@@ -665,6 +698,23 @@ def _prune_old_sessions(keep: int = KEEP_SESSIONS) -> None:
         for old in dirs[keep:]:
             shutil.rmtree(old, ignore_errors=True)
             print(f"[CLEANUP] Removed old session: {old.name}")
+    except Exception as e:
+        print(f"[CLEANUP WARNING] {e}")
+
+
+def _cleanup_old_uploads(keep: Optional[int] = None) -> None:
+    """Uploads accumulate silently. Keep the most recent few."""
+    keep = keep_uploads() if keep is None else keep
+    try:
+        p = Path("data/raw_videos")
+        if not p.exists():
+            return
+        vids = sorted([f for f in p.glob("*")
+                       if f.suffix.lower() in ALLOWED_EXTENSIONS],
+                      key=lambda f: f.stat().st_mtime, reverse=True)
+        for old in vids[keep:]:
+            old.unlink(missing_ok=True)
+            print(f"[CLEANUP] Removed old upload: {old.name}")
     except Exception as e:
         print(f"[CLEANUP WARNING] {e}")
 
@@ -682,12 +732,17 @@ def _transcode_h264(out_dir: Optional[Path]) -> None:
             _publish_latest(out_dir)
         return
 
+    # Scale the timeout with video length: a fixed 30 minutes would abort on
+    # a long recording and leave an unplayable file.
+    timeout_s = max(600, int(SESSION.total_frames / 20) or 600)
+
     try:
         subprocess.run(
             ["ffmpeg", "-y", "-i", str(raw), "-c:v", "libx264",
              "-preset", "veryfast", "-crf", "24", "-pix_fmt", "yuv420p",
              str(final)],
-            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=1800)
+            check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            timeout=timeout_s)
         raw.unlink(missing_ok=True)
         print(f"[ARTIFACT] Annotated video -> {final}")
     except FileNotFoundError:
@@ -698,7 +753,8 @@ def _transcode_h264(out_dir: Optional[Path]) -> None:
         print(f"[ARTIFACT] Transcode failed ({e}); kept raw file.")
 
     _publish_latest(out_dir)
-    
+
+
 def generate_mjpeg_stream():
     """Synchronous generator: FastAPI runs it in a thread, so the event loop
     stays responsive for WebSockets and REST."""
@@ -708,7 +764,8 @@ def generate_mjpeg_stream():
     # instead of starting a competing GPU pass.
     if SESSION.streaming:
         while SESSION.streaming:
-            yield _wrap(_standby_frame("PIPELINE ALREADY RUNNING - VIEW IN ORIGINAL TAB"))
+            yield _wrap(_standby_frame(
+                "PIPELINE ALREADY RUNNING - VIEW IN ORIGINAL TAB"))
             time.sleep(1.0)
         return
 
@@ -720,6 +777,25 @@ def generate_mjpeg_stream():
     last_depth_array = None
     t_start = time.time()
 
+    # Config is pulled into locals when a video opens. Initialised here so the
+    # standby path never touches an undefined name.
+    C = SESSION.cfg or _load_session_config()
+    depth_every_n = C["depth_every_n"]
+    detect_every_n = C["detect_every_n"]
+    imgsz = C["imgsz"]
+    conf_floor = C["conf_floor"]
+    tracker_cfg = C["tracker_cfg"]
+    class_conf = C["class_conf"]
+    max_area_ratio = C["max_area_ratio"]
+    default_max_ratio = C["default_max_area_ratio"]
+    geo_mode = C["geo_mode"]
+    sim_lat, sim_lon = C["sim_start_lat"], C["sim_start_lon"]
+    sim_dlat, sim_dlon = C["sim_lat_per_frame"], C["sim_lon_per_frame"]
+    altitude_m = C["altitude_m"]
+    pitch_deg = C["pitch_deg"]
+    depth_enabled = C["depth_enabled"] and DEPTH_AVAILABLE
+    depth_input_width = C["depth_input_width"]
+
     try:
         while True:
             # ---------------- STANDBY ----------------
@@ -730,7 +806,8 @@ def generate_mjpeg_stream():
                     writer.release(); writer = None
                     SESSION.write_artifacts()
                 SESSION.streaming = False
-                msg = ("MISSION COMPLETE - REVIEW RESULTS BELOW" if SESSION.finished
+                msg = ("MISSION COMPLETE - REVIEW RESULTS BELOW"
+                       if SESSION.finished
                        else "SYSTEM STANDBY - UPLOAD VIDEO TO START AI PIPELINE")
                 yield _wrap(_standby_frame(msg))
                 time.sleep(0.5)
@@ -758,11 +835,32 @@ def generate_mjpeg_stream():
                 SESSION.streaming = True
                 t_start = time.time()
 
+                # Pull config into locals for this run. Dict lookups in the
+                # per-frame loop are wasteful, and this guarantees the run
+                # uses one consistent set of values throughout.
+                C = SESSION.cfg
+                depth_every_n = C["depth_every_n"]
+                detect_every_n = C["detect_every_n"]
+                imgsz = C["imgsz"]
+                conf_floor = C["conf_floor"]
+                tracker_cfg = C["tracker_cfg"]
+                class_conf = C["class_conf"]
+                max_area_ratio = C["max_area_ratio"]
+                default_max_ratio = C["default_max_area_ratio"]
+                geo_mode = C["geo_mode"]
+                sim_lat, sim_lon = C["sim_start_lat"], C["sim_start_lon"]
+                sim_dlat, sim_dlon = C["sim_lat_per_frame"], C["sim_lon_per_frame"]
+                altitude_m = C["altitude_m"]
+                pitch_deg = C["pitch_deg"]
+                depth_enabled = C["depth_enabled"] and DEPTH_AVAILABLE
+                depth_input_width = C["depth_input_width"]
+
                 # Long videos: sample frames so a 1-hour upload doesn't take
                 # 3 hours. The annotated output still covers the whole video,
                 # just at a lower effective frame rate.
                 SESSION.frame_stride = max(
-                    1, int(np.ceil(SESSION.total_frames / MAX_FRAMES_TO_PROCESS)))
+                    1, int(np.ceil(SESSION.total_frames /
+                                   C["max_frames_to_process"])))
                 if SESSION.frame_stride > 1:
                     print(f"[PIPELINE] Long video ({SESSION.total_frames} frames): "
                           f"processing every {SESSION.frame_stride}th frame")
@@ -776,7 +874,7 @@ def generate_mjpeg_stream():
                 geo_projector = GeoProjector(
                     image_width=SESSION.width or 1920,
                     image_height=SESSION.height or 1080,
-                    hfov_deg=CAMERA_HFOV_DEG,
+                    hfov_deg=C["hfov_deg"],
                 )
 
                 # Reset tracker so IDs don't leak between videos.
@@ -790,7 +888,8 @@ def generate_mjpeg_stream():
                 # at real-time speed rather than fast-forward.
                 if SESSION.out_dir:
                     try:
-                        out_fps = max(1.0, SESSION.fps / max(1, SESSION.frame_stride))
+                        out_fps = max(1.0, SESSION.fps /
+                                      max(1, SESSION.frame_stride))
                         writer = cv2.VideoWriter(
                             str(SESSION.out_dir / "annotated_raw.mp4"),
                             cv2.VideoWriter_fourcc(*"mp4v"),
@@ -800,14 +899,16 @@ def generate_mjpeg_stream():
                         if not writer.isOpened():
                             print("[WARNING] VideoWriter failed to open; "
                                   "live view continues without recording.")
-                            SESSION.stage_status["artifact"] = "failed: writer unavailable"
+                            SESSION.stage_status["artifact"] = \
+                                "failed: writer unavailable"
                             writer = None
                     except Exception as e:
                         print(f"[WARNING] VideoWriter error: {e}")
                         writer = None
 
-                print(f"[PIPELINE] {SESSION.session_id} | {SESSION.width}x{SESSION.height} "
-                      f"@ {SESSION.fps:.1f}fps | {SESSION.total_frames} frames")
+                print(f"[PIPELINE] {SESSION.session_id} | "
+                      f"{SESSION.width}x{SESSION.height} @ {SESSION.fps:.1f}fps "
+                      f"| {SESSION.total_frames} frames")
 
             # ---------------- READ ----------------
             ret, frame = cap.read()
@@ -825,7 +926,8 @@ def generate_mjpeg_stream():
 
             # Skip frames on long videos. Counted but not processed, so the
             # progress percentage still reflects real position in the file.
-            if SESSION.frame_stride > 1 and (SESSION.frame_count % SESSION.frame_stride) != 0:
+            if (SESSION.frame_stride > 1 and
+                    (SESSION.frame_count % SESSION.frame_stride) != 0):
                 SESSION.frame_count += 1
                 continue
 
@@ -848,13 +950,16 @@ def generate_mjpeg_stream():
             # Depth Anything V2 was ~95% of frame time at full resolution.
             # Depth changes slowly across frames; detection does not. So it
             # runs on its own schedule, at the model's native input width,
-            # and every other frame reuses the cached map.
-            if DEPTH_AVAILABLE and (fid % DEPTH_EVERY_N == 1 or last_depth_array is None):
+            # and other frames reuse the cached map.
+            if depth_enabled and (fid % depth_every_n == 1
+                                  or last_depth_array is None):
                 try:
-                    dh = max(1, int(fh * (DEPTH_INPUT_WIDTH / float(fw))))
-                    small = cv2.resize(frame, (DEPTH_INPUT_WIDTH, dh))
+                    dh = max(1, int(fh * (depth_input_width / float(fw))))
+                    small = cv2.resize(frame, (depth_input_width, dh))
                     pil = Image.fromarray(cv2.cvtColor(small, cv2.COLOR_BGR2RGB))
                     depth_small, _ = depth_engine.predict_depth(pil)
+                    if depth_small is None:
+                        raise RuntimeError("depth inference returned nothing")
                     last_depth_array = cv2.resize(
                         np.asarray(depth_small, dtype=np.float32), (fw, fh))
                     nd = cv2.normalize(last_depth_array, None, 0, 255,
@@ -867,23 +972,26 @@ def generate_mjpeg_stream():
             depth_array = last_depth_array
 
             # ---------------- DETECTION + TRACKING ----------------
-            if fid % DETECT_EVERY_N == 1 or DETECT_EVERY_N == 1:
+            if fid % detect_every_n == 1 or detect_every_n == 1:
                 try:
                     if DEVICE == "cuda":
                         with torch.amp.autocast("cuda"):
                             results = yolo_model.track(
-                                source=frame, conf=CONF_THRESHOLD, imgsz=IMGSZ,
-                                device=DEVICE, persist=True, tracker=TRACKER_CFG,
+                                source=frame, conf=conf_floor, imgsz=imgsz,
+                                device=DEVICE, persist=True, tracker=tracker_cfg,
                                 verbose=False)[0]
                     else:
                         results = yolo_model.track(
-                            source=frame, conf=CONF_THRESHOLD, imgsz=IMGSZ,
-                            device=DEVICE, persist=True, tracker=TRACKER_CFG,
+                            source=frame, conf=conf_floor, imgsz=imgsz,
+                            device=DEVICE, persist=True, tracker=tracker_cfg,
                             verbose=False)[0]
 
-                    if USE_SIMULATED_FLIGHT:
-                        cur_lat = SIM_START_LAT + fid * SIM_LAT_PER_FRAME
-                        cur_lon = SIM_START_LON + fid * SIM_LON_PER_FRAME
+                    # Geolocation. A synthetic path is generated only when
+                    # explicitly configured, and every hazard from it carries
+                    # geo_source "synthetic" so the UI can badge it.
+                    if geo_mode == "synthetic":
+                        cur_lat = sim_lat + fid * sim_dlat
+                        cur_lon = sim_lon + fid * sim_dlon
                         geo_source = "synthetic"
                     else:
                         cur_lat = cur_lon = None
@@ -895,7 +1003,8 @@ def generate_mjpeg_stream():
                     if boxes is not None and len(boxes) > 0:
                         for box in boxes:
                             # No track ID = untracked. Drop it rather than
-                            # merging unrelated detections into a phantom hazard.
+                            # merging unrelated detections into a phantom
+                            # hazard.
                             if box.id is None:
                                 continue
 
@@ -904,9 +1013,11 @@ def generate_mjpeg_stream():
                             class_name = yolo_model.names[cls_id]
                             conf = float(box.conf[0])
 
-                            # PER-CLASS threshold. Recall-starved classes get a
-                            # lower bar; the persistence gate removes the noise.
-                            if conf < CLASS_CONF.get(class_name, DEFAULT_CLASS_CONF):
+                            # PER-CLASS threshold. Recall-starved classes get
+                            # a lower bar; the persistence gate removes the
+                            # extra noise that admits.
+                            if conf < class_conf.get(class_name,
+                                                     DEFAULT_CLASS_CONF):
                                 continue
 
                             coords = box.xyxy[0].cpu().numpy().astype(int).tolist()
@@ -915,8 +1026,12 @@ def generate_mjpeg_stream():
                             area_px = max(0, x2 - x1) * max(0, y2 - y1)
                             if area_px <= 0:
                                 continue
-                            _max_ratio = MAX_BOX_AREA_RATIO.get(
-                                class_name, DEFAULT_MAX_AREA_RATIO)
+
+                            # Per-class area ceiling. A flooded street can
+                            # legitimately fill an aerial frame; an open
+                            # manhole never does.
+                            _max_ratio = max_area_ratio.get(class_name,
+                                                            default_max_ratio)
                             if area_px > _max_ratio * (fw * fh):
                                 continue
 
@@ -927,16 +1042,18 @@ def generate_mjpeg_stream():
                                         pixel_x=(x1 + x2) // 2,
                                         pixel_y=(y1 + y2) // 2,
                                         drone_lat=cur_lat, drone_lon=cur_lon,
-                                        altitude_m=SIM_ALTITUDE_M,
-                                        pitch_deg=CAMERA_PITCH_DEG,
+                                        altitude_m=altitude_m,
+                                        pitch_deg=pitch_deg,
                                     )
                                     lat = round(gps["latitude"], 7)
                                     lon = round(gps["longitude"], 7)
                                 except Exception as e:
-                                    SESSION.stage_status["geo"] = f"failed: {type(e).__name__}"
+                                    SESSION.stage_status["geo"] = \
+                                        f"failed: {type(e).__name__}"
 
-                            depth_index = (compute_relative_depth_index(depth_array, coords)
-                                           if depth_array is not None else None)
+                            depth_index = (
+                                compute_relative_depth_index(depth_array, coords)
+                                if depth_array is not None else None)
 
                             SESSION.registry.update(
                                 track_id=track_id, class_name=class_name,
@@ -970,7 +1087,8 @@ def generate_mjpeg_stream():
                 colour = (0, 200, 255) if "water" in name.lower() else (0, 255, 0)
                 cv2.rectangle(annotated, (x1, y1), (x2, y2), colour, 2)
                 label = f"#{b['track_id']} {name} {b['conf']:.2f}"
-                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
+                (tw, th), _ = cv2.getTextSize(label, cv2.FONT_HERSHEY_SIMPLEX,
+                                              0.5, 1)
                 ly = max(th + 4, y1 - 6)
                 cv2.rectangle(annotated, (x1, ly - th - 4), (x1 + tw + 6, ly + 2),
                               (0, 0, 0), -1)
@@ -979,7 +1097,8 @@ def generate_mjpeg_stream():
                 cv2.rectangle(depth_viz, (x1, y1), (x2, y2), (255, 255, 255), 1)
 
             n_conf = len(SESSION.hazards())
-            hud = f"F{fid}  t={t_s:5.1f}s  hazards={n_conf}  {SESSION.achieved_fps:.1f}fps"
+            hud = (f"F{fid}  t={t_s:5.1f}s  hazards={n_conf}  "
+                   f"{SESSION.achieved_fps:.1f}fps")
             cv2.rectangle(annotated, (8, 8), (8 + 430, 40), (0, 0, 0), -1)
             cv2.putText(annotated, hud, (14, 32), cv2.FONT_HERSHEY_SIMPLEX,
                         0.6, (255, 255, 255), 1)
@@ -1005,7 +1124,7 @@ def generate_mjpeg_stream():
 
             cv2.putText(left, "1. DETECTION + TRACKING", (12, 24),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
-            label_r = ("2. RELATIVE DEPTH" if DEPTH_AVAILABLE
+            label_r = ("2. RELATIVE DEPTH" if depth_enabled
                        else "2. DEPTH UNAVAILABLE")
             cv2.putText(right, label_r, (12, 24),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 2)
@@ -1032,9 +1151,11 @@ def generate_mjpeg_stream():
         SESSION.streaming = False
         SESSION.write_artifacts()
 
+
 # ===========================================================================
 # MUNICIPAL ACCESS CONTROL & USER ROLES (RBAC)
 # ===========================================================================
+
 MUNICIPAL_USERS = {
     "admin": {
         "id": "USR-ADM-01",
@@ -1051,8 +1172,8 @@ MUNICIPAL_USERS = {
             "hazard:assign_contractor",
             "hazard:audit_signoff",
             "budget:approve",
-            "reports:export"
-        ]
+            "reports:export",
+        ],
     },
     "employee": {
         "id": "USR-EMP-04",
@@ -1066,17 +1187,20 @@ MUNICIPAL_USERS = {
             "hazard:view",
             "hazard:upload_proof",
             "hazard:mark_progress",
-            "reports:view"
-        ]
-    }
+            "reports:view",
+        ],
+    },
 }
+
 
 def require_admin_role(x_user_role: Optional[str] = None):
     if x_user_role and x_user_role.strip().lower() == "employee":
         raise HTTPException(
             status_code=403,
-            detail="Access Denied: Municipal Commissioner / Administrator authorization required."
+            detail="Access Denied: Municipal Commissioner / Administrator "
+                   "authorization required."
         )
+
 
 # ===========================================================================
 # ROUTES
@@ -1084,18 +1208,21 @@ def require_admin_role(x_user_role: Optional[str] = None):
 
 @app.get("/api/auth/roles")
 def get_municipal_roles():
-    """Return available municipal deployment profiles and permissions."""
+    """Available municipal deployment profiles and permissions."""
     return {"status": "ok", "users": MUNICIPAL_USERS}
+
 
 @app.get("/api/config")
 def get_config():
     return CFG.get()
+
 
 @app.post("/api/config")
 async def set_config(patch: dict, x_user_role: Optional[str] = Header(None)):
     require_admin_role(x_user_role)
     return {"status": "updated", "config": CFG.update(patch),
             "note": "Applies to the next processing run."}
+
 
 @app.post("/api/config/reset")
 def reset_config(x_user_role: Optional[str] = Header(None)):
@@ -1111,8 +1238,10 @@ async def api_stream_video():
         media_type="multipart/x-mixed-replace; boundary=frame",
     )
 
+
 def _safe_name(filename: str) -> str:
-    """Never trust a client filename. Strip path components and unsafe chars."""
+    """Never trust a client filename. Strip path components and unsafe chars —
+    a name like ../../etc/x.mp4 would otherwise write outside the folder."""
     base = os.path.basename(filename or "upload")
     base = re.sub(r"[^A-Za-z0-9._-]", "_", base)[:80]
     stem, ext = os.path.splitext(base)
@@ -1122,8 +1251,10 @@ def _safe_name(filename: str) -> str:
 
 
 @app.post("/api/upload-video")
-async def upload_video(file: UploadFile = File(...), x_user_role: Optional[str] = Header(None)):
+async def upload_video(file: UploadFile = File(...),
+                       x_user_role: Optional[str] = Header(None)):
     require_admin_role(x_user_role)
+
     ext = os.path.splitext(file.filename or "")[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         return {"status": "error",
@@ -1133,8 +1264,9 @@ async def upload_video(file: UploadFile = File(...), x_user_role: Optional[str] 
     os.makedirs("data/raw_videos", exist_ok=True)
     dest = os.path.join("data/raw_videos", _safe_name(file.filename))
 
-    # Stream to disk with a hard size cap so a huge upload can't fill the disk.
-    limit = MAX_UPLOAD_MB * 1024 * 1024
+    # Stream to disk with a hard size cap so a huge upload cannot fill the disk.
+    limit_mb = max_upload_mb()
+    limit = limit_mb * 1024 * 1024
     written = 0
     try:
         with open(dest, "wb") as out:
@@ -1147,14 +1279,15 @@ async def upload_video(file: UploadFile = File(...), x_user_role: Optional[str] 
                     out.close()
                     os.remove(dest)
                     return {"status": "error",
-                            "message": f"File exceeds {MAX_UPLOAD_MB} MB limit."}
+                            "message": f"File exceeds {limit_mb} MB limit."}
                 out.write(chunk)
     except Exception as e:
         if os.path.exists(dest):
             os.remove(dest)
         return {"status": "error", "message": f"Upload failed: {e}"}
 
-    # Validate it actually decodes before accepting it.
+    # Validate it actually decodes before accepting it. An extension check
+    # alone would let a renamed or corrupt file fail deep in the pipeline.
     probe = cv2.VideoCapture(dest)
     if not probe.isOpened():
         probe.release(); os.remove(dest)
@@ -1174,8 +1307,9 @@ async def upload_video(file: UploadFile = File(...), x_user_role: Optional[str] 
     duration = nframes / fps if fps else 0
 
     SESSION.active = False
-    time.sleep(0.4)
+    time.sleep(0.4)                       # let a running pass wind down
     _cleanup_old_uploads()
+    _prune_old_sessions()
     sid = SESSION.new_session(dest)
     SESSION.active = True
 
@@ -1189,24 +1323,14 @@ async def upload_video(file: UploadFile = File(...), x_user_role: Optional[str] 
     }
 
 
-def _cleanup_old_uploads(keep: int = 3) -> None:
-    """Uploads accumulate silently. Keep the most recent few."""
-    try:
-        p = Path("data/raw_videos")
-        vids = sorted([f for f in p.glob("*") if f.suffix.lower() in ALLOWED_EXTENSIONS],
-                      key=lambda f: f.stat().st_mtime, reverse=True)
-        for old in vids[keep:]:
-            old.unlink(missing_ok=True)
-            print(f"[CLEANUP] Removed old upload: {old.name}")
-    except Exception as e:
-        print(f"[CLEANUP WARNING] {e}")
-
-
 @app.get("/api/stream/start")
 @app.post("/api/stream/start")
 def start_stream():
+    # Always a fresh session: replaying without resetting the registry made
+    # detection counts accumulate across runs while frame_count restarted.
     if SESSION.streaming:
         return {"status": "already_running", "session_id": SESSION.session_id}
+    _prune_old_sessions()
     SESSION.new_session(SESSION.video_path)
     SESSION.active = True
     return {"status": "success", "session_id": SESSION.session_id}
@@ -1226,7 +1350,8 @@ def get_latest_video():
     if not LATEST_VIDEO.exists():
         return {"error": "no annotated video yet — run the pipeline first"}
     return FileResponse(str(LATEST_VIDEO), media_type="video/mp4",
-                        filename="latest_annotated.mp4")
+                        filename=DOWNLOAD_NAME)
+
 
 @app.get("/api/hazards")
 def get_hazards():
@@ -1292,21 +1417,28 @@ class StatusUpdate(BaseModel):
 async def update_hazard_status(
     payload: StatusUpdate,
     hazard_id: Optional[str] = None,
-    x_user_role: Optional[str] = Header(None)
+    x_user_role: Optional[str] = Header(None),
 ):
     hid = hazard_id or payload.hazard_id
     if not hid:
         return {"status": "error", "message": "hazard_id required"}
 
-    valid_statuses = ("OPEN", "IN_PROGRESS", "PENDING_AUDIT", "RESOLVED", "VERIFIED_CLOSED")
-    if payload.status not in valid_statuses:
-        return {"status": "error", "message": f"invalid status: {payload.status}. Must be one of {valid_statuses}"}
+    valid = ("OPEN", "IN_PROGRESS", "PENDING_AUDIT", "RESOLVED",
+             "VERIFIED_CLOSED")
+    if payload.status not in valid:
+        return {"status": "error",
+                "message": f"invalid status: {payload.status}. "
+                           f"Must be one of {valid}"}
 
-    # RBAC Enforcement: Field workers can submit proof for PENDING_AUDIT; final closure requires Admin authorization.
-    if payload.status == "VERIFIED_CLOSED" and x_user_role and x_user_role.strip().lower() == "employee":
+    # Field workers submit proof for PENDING_AUDIT; final closure requires
+    # administrator sign-off.
+    if (payload.status == "VERIFIED_CLOSED" and x_user_role
+            and x_user_role.strip().lower() == "employee"):
         raise HTTPException(
             status_code=403,
-            detail="Forbidden: Field employees cannot unilaterally mark work orders as VERIFIED_CLOSED. Submit proof for PENDING_AUDIT for Commissioner sign-off."
+            detail="Forbidden: Field employees cannot unilaterally mark work "
+                   "orders as VERIFIED_CLOSED. Submit proof for PENDING_AUDIT "
+                   "for Commissioner sign-off."
         )
 
     ok = SESSION.registry.set_status(hid, payload.status) if SESSION.registry else False
@@ -1322,12 +1454,12 @@ def get_telemetry():
 
 
 # --------------------------- RECORDING ---------------------------
-# Recording is AUTOMATIC: the pipeline writes the annotated video during
-# its single pass over the frames, and publishes it to
+# Recording is AUTOMATIC: the pipeline writes the annotated video during its
+# single pass over the frames, and publishes it to
 # outputs/latest_annotated.mp4 when the run completes.
 #
-# These endpoints are kept so the existing UI keeps working. Start/stop
-# are no-ops that report the automatic behaviour rather than 404ing.
+# start/stop are kept as no-ops so the existing UI keeps working rather than
+# receiving a 404.
 
 @app.get("/api/record/start")
 @app.post("/api/record/start")
@@ -1349,8 +1481,7 @@ def stop_on_demand_recording():
         "status": "stopped",
         "automatic": True,
         "file_ready": ready,
-        "message": ("Annotated video ready for download."
-                    if ready else
+        "message": ("Annotated video ready for download." if ready else
                     "No completed run yet — the video is written when "
                     "processing finishes."),
     }
@@ -1376,12 +1507,13 @@ def download_on_demand_recording():
     if not LATEST_VIDEO.exists():
         return {"error": "No annotated video yet. Upload a video and let "
                          "the pipeline finish."}
-    name = f"hydrovision_{SESSION.session_id or 'latest'}.mp4"
-    return FileResponse(str(LATEST_VIDEO), media_type="video/mp4", filename=name)
+    return FileResponse(str(LATEST_VIDEO), media_type="video/mp4",
+                        filename=DOWNLOAD_NAME)
+
 
 # --------------------------- WebSockets ---------------------------
-# Both endpoints send the SAME shape. The old ones sent different
-# structures, which is why two parts of the UI disagreed about the count.
+# Both endpoints send the SAME shape. Sending different structures is why two
+# parts of the UI once disagreed about the hazard count.
 
 async def _push_loop(ws: WebSocket, interval: float, label: str):
     await ws.accept()
@@ -1391,7 +1523,7 @@ async def _push_loop(ws: WebSocket, interval: float, label: str):
             if ws.client_state.name != "CONNECTED":
                 break
             await ws.send_json({
-                "schema_version": "1.0.0",
+                "schema_version": SCHEMA_VERSION,
                 "summary": SESSION.summary(),
                 "hazards": SESSION.hazards(),
             })

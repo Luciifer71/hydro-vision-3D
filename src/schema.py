@@ -20,7 +20,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Optional
 
-SCHEMA_VERSION = "1.0.0"
+SCHEMA_VERSION = "2.0.0"
 
 
 # ---------------------------------------------------------------------------
@@ -28,11 +28,11 @@ SCHEMA_VERSION = "1.0.0"
 # ---------------------------------------------------------------------------
 
 CLASS_NAMES: dict[int, str] = {
-    0: "potholes",
-    1: "waterlogging_area",
-    2: "drainage_overflow",
-    3: "open_manhole",
-    4: "damaged_footpath",
+    0: "damaged_footpath",
+    1: "drainage_overflow",
+    2: "open_manhole",
+    3: "potholes",
+    4: "waterlogging_area",
 }
 
 CLASS_IDS: dict[str, int] = {v: k for k, v in CLASS_NAMES.items()}
