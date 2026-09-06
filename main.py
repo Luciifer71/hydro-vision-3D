@@ -25,6 +25,7 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+from collections import deque
 
 import cv2
 import numpy as np
@@ -616,7 +617,7 @@ class SessionState:
             (self.out_dir / "hazards.geojson").write_text(
                 json.dumps(self.geojson(), indent=2))
             print(f"[ARTIFACT] Wrote session bundle -> {self.out_dir}")
-            _promote_to_latest(self.out_dir)
+            _publish_latest(self.out_dir)
         except Exception as e:
             self.stage_status["artifact"] = f"failed: {e}"
             print(f"[ARTIFACT ERROR] {e}")
@@ -908,6 +909,8 @@ def generate_mjpeg_stream():
     last_depth_colormap = None
     last_depth_array = None
     t_start = time.time()
+    _fps_window = deque(maxlen=240)
+    _hud_hazard_count = 0
 
     # Config is pulled into locals when a video opens. Initialised here so the
     # standby path never touches an undefined name.
@@ -1075,6 +1078,8 @@ def generate_mjpeg_stream():
             fid = SESSION.frame_count
             t_s = fid / SESSION.fps if SESSION.fps else 0.0
             annotated = frame.copy()
+            _t = {}
+            _m = time.time()
             fh, fw = frame.shape[:2]
 
             # A frame whose size differs from what the writer was opened with
@@ -1109,6 +1114,7 @@ def generate_mjpeg_stream():
                     SESSION.stage_status["depth"] = f"failed: {type(e).__name__}"
                     print(f"[DEPTH WARNING] frame {fid}: {e}")
 
+            _t["depth"] = time.time() - _m; _m = time.time()
             depth_array = last_depth_array
 
             # ---------------- DETECTION + TRACKING ----------------
@@ -1213,7 +1219,8 @@ def generate_mjpeg_stream():
                 except Exception as e:
                     SESSION.stage_status["detect"] = f"failed: {type(e).__name__}"
                     print(f"[AI WARNING] frame {fid}: {e}")
-
+            
+            _t["detect"] = time.time() - _m; _m = time.time()
             # ---------------- OVERLAY ----------------
             depth_viz = (last_depth_colormap.copy()
                          if last_depth_colormap is not None
@@ -1236,12 +1243,12 @@ def generate_mjpeg_stream():
                             cv2.FONT_HERSHEY_SIMPLEX, 0.5, colour, 1)
                 cv2.rectangle(depth_viz, (x1, y1), (x2, y2), (255, 255, 255), 1)
 
-            n_conf = len(SESSION.hazards())
-            hud = (f"F{fid}  t={t_s:5.1f}s  hazards={n_conf}  "
-                   f"{SESSION.achieved_fps:.1f}fps")
-            cv2.rectangle(annotated, (8, 8), (8 + 430, 40), (0, 0, 0), -1)
-            cv2.putText(annotated, hud, (14, 32), cv2.FONT_HERSHEY_SIMPLEX,
-                        0.6, (255, 255, 255), 1)
+            # Consolidation + severity scoring is O(tracks x samples). Running
+            # it every frame just to draw a HUD number was a real cost. The
+            # WebSocket pushes the authoritative count at 2 Hz anyway.
+            if fid % 15 == 1:
+                _hud_hazard_count = len(SESSION.hazards())
+            n_conf = _hud_hazard_count
 
             # Mission record gets the same pixels the operator saw.
             if writer is not None:
@@ -1252,8 +1259,15 @@ def generate_mjpeg_stream():
                     SESSION.stage_status["artifact"] = f"failed: {type(e).__name__}"
                     writer.release(); writer = None
 
-            elapsed = max(1e-6, time.time() - t_start)
-            SESSION.achieved_fps = SESSION.frame_count / elapsed
+                        # Rolling FPS over the last ~2s of processed frames. A cumulative
+            # average since session start hides the current rate, which is the
+            # number that matters when tuning on deployment day.
+            _now = time.time()
+            _fps_window.append(_now)
+            while len(_fps_window) > 1 and _now - _fps_window[0] > 2.0:
+                _fps_window.popleft()
+            if len(_fps_window) > 1:
+                SESSION.achieved_fps = (len(_fps_window) - 1) / (_fps_window[-1] - _fps_window[0])
 
             # ---------------- STREAM ----------------
             target_h = 480
@@ -1272,6 +1286,11 @@ def generate_mjpeg_stream():
             composite = np.hstack((left, right))
             ok, buf = cv2.imencode(".jpg", composite,
                                    [int(cv2.IMWRITE_JPEG_QUALITY), 70])
+            
+            _t["render"] = time.time() - _m
+            if fid % 53 == 1:
+                print(f"[PERF] f{fid} " + " ".join(f"{k}={v*1000:.0f}ms"
+                                                   for k, v in _t.items()))
             if ok:
                 wrapped = _wrap(buf.tobytes())
                 SESSION.latest_frame_bytes = wrapped

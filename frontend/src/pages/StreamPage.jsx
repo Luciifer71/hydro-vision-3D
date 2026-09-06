@@ -18,8 +18,10 @@ export default function StreamPage() {
     connect, disconnect, startStream, stopStream, resetStream,
     videoPath, setVideoPath, logs, feedMode, setFeedMode, switchToLiveFeed
   } = useStore();
-
-  const fps = currentState?.summary?.fps || 0;
+  
+  _t = {}
+  _m = time.time()
+  const fps = currentState?.summary?.achieved_fps ?? 0;
   const isLive = feedMode === 'live';
 
   return (

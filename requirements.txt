@@ -21,3 +21,4 @@ httpx>=0.25.0                   # Async HTTP client (stream_bridge)
 Pillow>=10.0.0                  # Image processing utilities
 transformers
 python-multipart
+lap>=0.5.12

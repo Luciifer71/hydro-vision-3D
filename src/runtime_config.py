@@ -106,8 +106,11 @@ DEFAULTS: Dict[str, Any] = {
     # ---- DEPTH -------------------------------------------------------
     "depth": {
         "enabled": True,
-        "every_n_frames": 15,       # depth changes slowly; detection doesn't
-        "input_width": 518,         # Depth Anything's native size
+        # [DAY-OF] Depth is the pipeline's slowest stage. Depth varies slowly
+        # across a drone pass, so a longer cadence costs almost no accuracy.
+        # Raise this if FPS is too low on the demo machine.
+        "every_n_frames": 30,
+        "input_width": 518,
     },
 
         # ---- GEOLOCATION -------------------------------------------------
