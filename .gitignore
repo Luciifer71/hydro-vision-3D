@@ -7,6 +7,7 @@ test_frames/
 annotation_frames/
 frontend/dist/
 .env
+*.png
 
 # Python
 __pycache__/

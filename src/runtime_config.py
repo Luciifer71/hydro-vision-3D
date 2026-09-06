@@ -102,12 +102,20 @@ DEFAULTS: Dict[str, Any] = {
         "input_width": 518,         # Depth Anything's native size
     },
 
-    # ---- GEOLOCATION -------------------------------------------------
-    # [DAY-OF] If the organisers' video carries telemetry, set mode to
-    # "telemetry". If not, "manual_anchor" or "none". "synthetic" produces
-    # a simulated flight path and every hazard is badged as such.
+        # ---- GEOLOCATION -------------------------------------------------
+    # Priority order at runtime: telemetry file if uploaded, else manual
+    # anchor if the operator has set one, else none. "synthetic" exists
+    # ONLY for testing the projection path and is never a default.
     "geo": {
-        "mode": "synthetic",        # telemetry | manual_anchor | synthetic | none
+        "mode": "none",             # telemetry | manual_anchor | synthetic | none
+        # Manual anchor: operator marks flight start/end on the map.
+        # Nulls mean unset — the pipeline must not project without both.
+        "anchor_start_lat": None,
+        "anchor_start_lon": None,
+        "anchor_end_lat": None,
+        "anchor_end_lon": None,
+        "anchor_heading_deg": None,  # null -> derived from start->end bearing
+        # Synthetic fixture parameters. Used only when mode == "synthetic".
         "sim_start_lat": 22.30720,
         "sim_start_lon": 73.18200,
         "sim_lat_per_frame": 0.000005,
