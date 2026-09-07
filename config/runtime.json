@@ -1,0 +1,5 @@
+{
+  "model": {
+    "weights": "models/frozen/yolov8m_mixed_20260907.pt"
+  }
+}

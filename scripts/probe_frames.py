@@ -5,14 +5,17 @@ import cv2
 
 
 ROOT = Path(__file__).resolve().parent.parent
-m = YOLO(str(ROOT / "best.pt"))
+import sys
+sys.path.insert(0, str(ROOT))
+import src.runtime_config as CFG
+_w = CFG.get()["model"]["weights"]
+print(f"[PROBE] {_w}")
+m = YOLO(_w)
 out = ROOT / "test_frames" / "annotated"; out.mkdir(exist_ok=True)
 imgs = sorted((ROOT / "test_frames").glob("*.jpg"))
 if not imgs:
     print("ERROR: no frames in test_frames/. Run extract_frames.py first.")
     raise SystemExit(1)
-for img in imgs:
-    ...
 
 for img in sorted((ROOT / "test_frames").glob("*.jpg")):
     # conf=0.01 — see EVERYTHING the model considered, not just what passes

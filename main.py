@@ -1172,16 +1172,11 @@ def generate_mjpeg_stream():
                             class_name = yolo_model.names[cls_id]
                             conf = float(box.conf[0])
 
-<<<<<<< HEAD
                             # Per-class threshold scaled by the live gate.
                             _base = class_conf.get(class_name, DEFAULT_CLASS_CONF)
                             _thr = min(0.95, max(0.05,
                                        _base * (LIVE_SENSITIVITY / SENSITIVITY_BASELINE)))
                             if conf < _thr:
-=======
-                            # AI Sensitivity Gate: filter against dynamic conf_floor
-                            if conf < class_conf.get(class_name, DEFAULT_CLASS_CONF):
->>>>>>> be2bbc3 (My changes)
                                 continue
 
                             coords = box.xyxy[0].cpu().numpy().astype(int).tolist()
@@ -1418,7 +1413,6 @@ async def set_threshold(request: Request):
     val = max(0.05, min(0.80, val))  # clamp
     if SESSION.cfg:
         SESSION.cfg["conf_floor"] = val
-        print(f"[API] Dynamic AI Sensitivity Gate set to {val}")
     return {"status": "ok", "conf_floor": val}
 
 
@@ -1845,7 +1839,6 @@ async def _push_loop(ws: WebSocket, interval: float, label: str):
                     LIVE_SENSITIVITY = max(0.05, min(0.95, float(data.get("value", 0.20))))
                     print(f"[WS] Sensitivity gate -> {LIVE_SENSITIVITY:.2f} "
                     f"(x{LIVE_SENSITIVITY / SENSITIVITY_BASELINE:.2f} on class thresholds)")
-                    print(f"[WS] Dynamic AI Sensitivity Gate set to {val}")
                     
             except (asyncio.TimeoutError, json.JSONDecodeError, ValueError, AttributeError):
                 pass
