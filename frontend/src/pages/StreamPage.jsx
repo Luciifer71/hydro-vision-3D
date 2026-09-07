@@ -19,8 +19,6 @@ export default function StreamPage() {
     videoPath, setVideoPath, logs, feedMode, setFeedMode, switchToLiveFeed
   } = useStore();
   
-  _t = {}
-  _m = time.time()
   const fps = currentState?.summary?.achieved_fps ?? 0;
   const isLive = feedMode === 'live';
 

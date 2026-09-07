@@ -61,6 +61,15 @@ SCHEMA_VERSION = "2.0.0"
 DEFAULT_CLASS_CONF = 0.20      # used if a class is missing from class_conf
 DEFAULT_MAX_AREA_RATIO = 0.60  # used if a class is missing from max_area_ratio
 
+# Live sensitivity gate. The slider scales every per-class threshold by
+# slider/SENSITIVITY_BASELINE, so the relative ordering between classes is
+# preserved while the operator trades recall against precision mid-run.
+# Read fresh each frame so it applies to the running session.
+SENSITIVITY_BASELINE = 0.20
+LIVE_SENSITIVITY = 0.20
+
+
+
 ALLOWED_EXTENSIONS = {".mp4", ".mov", ".avi", ".mkv", ".webm", ".m4v"}
 DOWNLOAD_NAME = "Hydro-Vision-3D_annotated.mp4"
 MAX_DURATION_S = 600           # advisory only; longer videos are frame-sampled
@@ -1159,11 +1168,11 @@ def generate_mjpeg_stream():
                             class_name = yolo_model.names[cls_id]
                             conf = float(box.conf[0])
 
-                            # PER-CLASS threshold. Recall-starved classes get
-                            # a lower bar; the persistence gate removes the
-                            # extra noise that admits.
-                            if conf < class_conf.get(class_name,
-                                                     DEFAULT_CLASS_CONF):
+                            # Per-class threshold scaled by the live gate.
+                            _base = class_conf.get(class_name, DEFAULT_CLASS_CONF)
+                            _thr = min(0.95, max(0.05,
+                                       _base * (LIVE_SENSITIVITY / SENSITIVITY_BASELINE)))
+                            if conf < _thr:
                                 continue
 
                             coords = box.xyxy[0].cpu().numpy().astype(int).tolist()
@@ -1811,10 +1820,12 @@ async def _push_loop(ws: WebSocket, interval: float, label: str):
                 raw_msg = await asyncio.wait_for(ws.receive_text(), timeout=0.01)
                 data = json.loads(raw_msg)
                 if data.get("type") == "CONFIDENCE_THRESHOLD":
-                    val = float(data.get("value", 0.20))
-                    if SESSION.cfg:
-                        SESSION.cfg["conf_floor"] = val
+                    global LIVE_SENSITIVITY
+                    LIVE_SENSITIVITY = max(0.05, min(0.95, float(data.get("value", 0.20))))
+                    print(f"[WS] Sensitivity gate -> {LIVE_SENSITIVITY:.2f} "
+                    f"(x{LIVE_SENSITIVITY / SENSITIVITY_BASELINE:.2f} on class thresholds)")
                     print(f"[WS] Dynamic AI Sensitivity Gate set to {val}")
+                    
             except (asyncio.TimeoutError, json.JSONDecodeError, ValueError, AttributeError):
                 pass
 
