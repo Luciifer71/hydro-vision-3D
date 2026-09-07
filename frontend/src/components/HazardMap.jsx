@@ -64,9 +64,11 @@ export default function HazardMap({ fullpage = false }) {
     trajectory = [], 
     currentPage, 
     connectionStatus, 
-    feedMode 
+    feedMode,
+    confidenceThreshold = 0.20
   } = useStore();
-  const activeHazards = allHazards.length > 0 ? allHazards : (currentSessionHazards.length > 0 ? currentSessionHazards : hazards);
+  const rawHazards = allHazards.length > 0 ? allHazards : (currentSessionHazards.length > 0 ? currentSessionHazards : hazards);
+  const activeHazards = rawHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
   const isLiveHardware = feedMode === 'live' && connectionStatus === 'LIVE' && telemetry?.latitude != null && telemetry?.longitude != null;
 
   // Filtered search results matching Ticket ID, Class Name, or Track ID

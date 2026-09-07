@@ -1,6 +1,7 @@
 {
   "schema_version": "2.0.0",
   "session": {
+ HEAD
     "session_id": "S-20260907-112224",
     "video_path": "data/raw_videos/master_video_62dc1e85_06fdde7f_7126b68e_ba26d6b5_baf18d2f_0718b6ad_f93010a5_39bc82ba.mp4",
     "width": 1920,
@@ -11,6 +12,18 @@
     "device": "mps",
     "started_at": "2026-09-07T05:52:24.842063+00:00",
     "finished_at": "2026-09-07T05:53:45.140955+00:00",
+
+    "session_id": "S-20260907-050722",
+    "video_path": "data/raw_videos/Web_Whatsapp_2_fda85ea4.mp4",
+    "width": 848,
+    "height": 478,
+    "fps": 30.007490659103244,
+    "total_frames": 446,
+    "model_path": "models/frozen/yolov8m_5class_20260906.pt",
+    "device": "cuda",
+    "started_at": "2026-09-06T23:37:22.028980+00:00",
+    "finished_at": null,
+ be2bbc3 (My changes)
     "stage_status": {
       "ingest": "ok",
       "detect": "ok",
@@ -92,6 +105,7 @@
     "max_frames_to_process": 9000
   },
   "summary": {
+<<<<<<< HEAD
     "session_id": "S-20260907-112224",
     "frame_id": 2802,
     "total_hazards": 10,
@@ -105,6 +119,21 @@
     "frame_stride": 1,
     "progress_pct": 100.0,
     "achieved_fps": 40.3,
+=======
+    "session_id": "S-20260907-050722",
+    "frame_id": 1,
+    "total_hazards": 0,
+    "raw_tracks": 0,
+    "total_area_m2": null,
+    "session_risk_band": "LOW",
+    "session_risk_score": 0,
+    "alert_count": 0,
+    "frames_processed": 1,
+    "total_frames": 446,
+    "frame_stride": 1,
+    "progress_pct": 0.2,
+    "achieved_fps": 0.0,
+>>>>>>> be2bbc3 (My changes)
     "stage_status": {
       "ingest": "ok",
       "detect": "ok",
@@ -116,6 +145,7 @@
       "severity": "ok",
       "artifact": "ok"
     },
+<<<<<<< HEAD
     "streaming": true,
     "finished": true,
     "mode": "live_processing"
@@ -492,4 +522,11 @@
       "priority_score": 38
     }
   ]
+=======
+    "streaming": false,
+    "finished": false,
+    "mode": "standby"
+  },
+  "hazards": []
+>>>>>>> be2bbc3 (My changes)
 }

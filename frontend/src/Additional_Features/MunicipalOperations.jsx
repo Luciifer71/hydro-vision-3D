@@ -16,15 +16,20 @@ const WARDS = ['All Wards', 'Ward 1 (North Sector)', 'Ward 2 (South Sector)', 'W
 
 export default function MunicipalOperations() {
   const { 
-    hazards = [], 
-    currentSessionHazards = [], 
-    allHazards = [], 
+    hazards: rawHazards = [], 
+    currentSessionHazards: rawCurrentSessionHazards = [], 
+    allHazards: rawAllHazards = [], 
     currentState, 
     updateHazardStatus, 
     currentUser, 
     fetchSupabaseHazardsHistory,
-    syncHazardsToSupabase
+    syncHazardsToSupabase,
+    confidenceThreshold = 0.20
   } = useStore();
+
+  const hazards = rawHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
+  const currentSessionHazards = rawCurrentSessionHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
+  const allHazards = rawAllHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
   const isAdmin = currentUser?.role === 'admin';
   const isEmployee = currentUser?.role === 'employee';
 

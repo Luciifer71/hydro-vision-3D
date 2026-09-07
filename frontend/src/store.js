@@ -308,7 +308,24 @@ export const useStore = create((set, get) => ({
     get().addLog(`Analyzing recorded video feed: ${fileName}`);
   },
 
+  isSyncing: false,
+
   syncHazardsToSupabase: async (hazardsToSync = null) => {
+    // Fix #5: Global isSyncing lock — prevent concurrent auto-sync and manual sync
+    if (get().isSyncing) {
+      console.warn('[SUPABASE] Sync already in progress, skipping.');
+      return { success: false, count: 0, reason: 'already_syncing' };
+    }
+    set({ isSyncing: true });
+
+    try {
+      return await get()._syncHazardsToSupabaseInner(hazardsToSync);
+    } finally {
+      set({ isSyncing: false });
+    }
+  },
+
+  _syncHazardsToSupabaseInner: async (hazardsToSync = null, _attempt = 1) => {
     const st = get();
     let hazards = hazardsToSync;
     if (!hazards || hazards.length === 0) {
@@ -372,7 +389,7 @@ export const useStore = create((set, get) => ({
       };
     });
 
-    // 2. Secondary: Insert into 'mission_detections' table
+    // 2. Secondary: Upsert into 'mission_detections' table
     const missionPayload = hazards.map((h, idx) => {
       const lat = Number(h.location?.latitude ?? h.latitude ?? 22.3072);
       const lon = Number(h.location?.longitude ?? h.longitude ?? 73.1812);
@@ -432,7 +449,7 @@ export const useStore = create((set, get) => ({
     }
 
     try {
-      const resMd = await supabase.from('mission_detections').insert(missionPayload);
+      const resMd = await supabase.from('mission_detections').upsert(missionPayload, { onConflict: 'hazard_id' });
       if (!resMd.error) {
         syncSuccess = true;
         syncedCount = missionPayload.length;
@@ -445,8 +462,16 @@ export const useStore = create((set, get) => ({
     if (syncSuccess) {
       return { success: true, count: syncedCount };
     }
+
+    // Fix #4: Retry logic — up to 2 attempts with 2s delay
+    if (_attempt < 2) {
+      get().addLog(`[SUPABASE] Sync failed (attempt ${_attempt}/2). Retrying in 2s...`);
+      await new Promise(r => setTimeout(r, 2000));
+      return get()._syncHazardsToSupabaseInner(hazardsToSync, _attempt + 1);
+    }
+
     get().addLog('Supabase sync warning: please verify network connection');
-    return { success: false, error: 'Sync failed on all tables' };
+    return { success: false, error: 'Sync failed on all tables after 2 attempts' };
   },
 
   addLog: (msg) => {
@@ -774,17 +799,26 @@ export const useStore = create((set, get) => ({
 
         // Background Auto-Sync logic (debounced to 8 seconds or on finish)
         const st = get();
-        if (st.currentSessionHazards && st.currentSessionHazards.length > 0) {
+        if (st.currentSessionHazards && st.currentSessionHazards.length > 0 && !st.isSyncing) {
           const nowMs = Date.now();
           if (nowMs - st.lastSupabaseSync > 8000 || raw.summary?.finished) {
-            set({ lastSupabaseSync: nowMs });
-            get().syncHazardsToSupabase(st.currentSessionHazards);
+            // Fix #3: Only update lastSupabaseSync AFTER successful sync
+            get().syncHazardsToSupabase(st.currentSessionHazards).then(result => {
+              if (result?.success) {
+                set({ lastSupabaseSync: Date.now() });
+              }
+            });
           }
         }
       } catch (e) { console.error('WS parse:', e); }
     };
 
     ws.onclose = () => {
+      // Fix #2: Flush final hazard batch to Supabase before marking disconnected
+      const st = get();
+      if (st.currentSessionHazards && st.currentSessionHazards.length > 0) {
+        get().syncHazardsToSupabase(st.currentSessionHazards);
+      }
       set({ connectionStatus: 'DISCONNECTED', wsRef: null, streamRunning: false });
     };
   },
@@ -1084,7 +1118,17 @@ export const useStore = create((set, get) => ({
         console.warn('Failed to send slider value via WS', e);
       }
     } else {
-      addLog(`AI Sensitivity Gate adjusted locally to ${(value * 100).toFixed(0)}% (${value.toFixed(2)})`);
+      // Fix #7: HTTP fallback — send threshold to backend even without WS (video mode)
+      const apiUrl = get().settings?.apiUrl || '';
+      fetch(`${apiUrl}/api/config/threshold`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ value }),
+      }).then(() => {
+        addLog(`AI Sensitivity Gate set to ${(value * 100).toFixed(0)}% via HTTP (${value.toFixed(2)})`);
+      }).catch(() => {
+        addLog(`AI Sensitivity Gate adjusted locally to ${(value * 100).toFixed(0)}% (${value.toFixed(2)})`);
+      });
     }
   },
 

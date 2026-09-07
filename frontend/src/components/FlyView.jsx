@@ -23,11 +23,12 @@ export default function FlyView() {
   const updateLocalVideoFrame = store.updateLocalVideoFrame;
 
   // 2. State mapped from store
-  const hazards = store.hazards || [];
-  const displayHazards = hazards;
+  const rawHazards = store.hazards || [];
+  const confidenceThreshold = store.confidenceThreshold ?? 0.20;
+  const displayHazards = rawHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
   const activeHazards = displayHazards.length;
   
-  const totalArea = hazards.reduce((sum, h) => sum + (Number(h.surface_area_m2) || 0), 0);
+  const totalArea = displayHazards.reduce((sum, h) => sum + (Number(h.surface_area_m2 || h.area_m2) || 0), 0);
   const { riskScore, riskLevel } = computeSessionRisk(displayHazards, currentState.summary || {});
     
   const isCritical = riskLevel === 'CRITICAL';

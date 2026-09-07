@@ -336,35 +336,6 @@ export default function Sidebar() {
           );
         })}
       </nav>
-
-      {/* Sidebar Footer with Live Hardware Annunciators */}
-      <div className="sidebar-footer">
-        <div className="status-row">
-          <div className={`status-dot ${connectionStatus === 'LIVE' ? 'live' : connectionStatus === 'CONNECTING' || connectionStatus === 'RECONNECTING' ? 'connecting' : 'error'}`} />
-          <span style={{ fontWeight: 700, letterSpacing: 0.5 }}>{connectionStatus}</span>
-          <span style={{ 
-            marginLeft: 'auto', 
-            fontSize: '0.62rem', 
-            color: isLive ? '#10b981' : 'var(--amber)', 
-            fontWeight: 800,
-            padding: '1px 6px',
-            borderRadius: 3,
-            background: isLive ? 'rgba(16, 185, 129, 0.12)' : 'rgba(255, 184, 0, 0.12)',
-            border: `1px solid ${isLive ? 'rgba(16, 185, 129, 0.3)' : 'rgba(255, 184, 0, 0.3)'}`
-          }}>
-            {isLive ? 'LIVE' : 'VIDEO'}
-          </span>
-        </div>
-
-        <div className="status-row" style={{ marginTop: 6, fontSize: '0.68rem', color: 'var(--text-muted)' }}>
-          <span style={{ fontFamily: 'var(--font-mono)' }}>
-            {isLive && telemetry?.satellites != null ? `${telemetry.satellites} SAT` : 'RECORDED'}
-          </span>
-          <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', color: 'var(--amber)' }}>
-            FR #{currentState?.frame_id ?? 0}
-          </span>
-        </div>
-      </div>
     </aside>
   );
 }

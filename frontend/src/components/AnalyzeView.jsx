@@ -61,7 +61,8 @@ const CHART_OPTS = {
 };
 
 export default function AnalyzeView() {
-  const { timelineHistory = [], riskHistory = [], currentState, hazards = [], streamRunning } = useStore();
+  const { timelineHistory = [], riskHistory = [], currentState, hazards: rawHazards = [], streamRunning, confidenceThreshold = 0.20 } = useStore();
+  const hazards = rawHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
 
   // Timeline chart dataset
   const timelineData = {

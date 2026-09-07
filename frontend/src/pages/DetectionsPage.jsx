@@ -4,7 +4,7 @@ import EmptySessionState from '../components/EmptySessionState.jsx';
 
 export default function DetectionsPage() {
   const { 
-    hazards = [], 
+    hazards: rawHazards = [], 
     detectionSearch, 
     detectionTypeFilter, 
     setDetectionSearch, 
@@ -12,8 +12,10 @@ export default function DetectionsPage() {
     updateHazardStatus,
     streamRunning,
     syncHazardsToSupabase,
-    currentState
+    currentState,
+    confidenceThreshold = 0.20
   } = useStore();
+  const hazards = rawHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
 
   const [isSyncing, setIsSyncing] = useState(false);
 
