@@ -132,7 +132,7 @@ const MUNICIPAL_USERS = {
     role: 'employee',
     designation: 'Ward 1 Field Operations Inspector',
     department: 'Civic Remediation Division',
-    ward: 'Ward 1 (North Sector)',
+    ward: 'Ward 1 (Nyay Mandir)',
     avatar: 'SK',
     permissions: [
       'hazard:view',
@@ -893,32 +893,58 @@ export const useStore = create((set, get) => ({
     get().addLog('Disconnected from backend — System in Standby');
   },
 
-  startStream: async () => {
-    const { settings, videoPath, addLog, currentUser } = get();
+  startStream: async (customPath = null) => {
+    const { settings, videoPath, addLog, currentUser, connect, connectionStatus } = get();
+    const targetPath = customPath || videoPath;
     try {
-      const url = new URL(`${settings.apiUrl}/api/stream/start`);
-      if (videoPath) url.searchParams.append('video_path', videoPath);
+      const baseUrl = settings.apiUrl || window.location.origin;
+      const url = new URL('/api/stream/start', baseUrl);
+      if (targetPath) url.searchParams.append('video_path', targetPath);
+      
       const res = await fetch(url.toString(), { 
         method: 'POST',
         headers: { 'X-User-Role': currentUser?.role || 'admin' }
       });
       const data = await res.json();
-      addLog(`Stream start: ${data.message || 'OK'}`);
+      addLog(`Stream start: ${data.message || data.status || 'OK'}`);
       set({ streamRunning: true });
-    } catch { addLog('Stream start failed'); }
+
+      // Auto-connect websocket if not connected
+      if (connectionStatus !== 'LIVE') {
+        connect();
+      }
+      
+      // Also trigger latest session hazards fetch
+      setTimeout(() => {
+        get().fetchGeoJsonHazards();
+      }, 1000);
+      return data;
+    } catch (err) { 
+      console.error('startStream error:', err);
+      addLog('Stream start failed - check backend connection'); 
+      return { status: 'error', message: err.message };
+    }
   },
 
   stopStream: async () => {
     const { settings, addLog, currentUser } = get();
     try {
-      const res = await fetch(`${settings.apiUrl}/api/stream/stop`, { 
+      const baseUrl = settings.apiUrl || window.location.origin;
+      const url = new URL('/api/stream/stop', baseUrl);
+      const res = await fetch(url.toString(), { 
         method: 'POST',
         headers: { 'X-User-Role': currentUser?.role || 'admin' }
       });
       const data = await res.json();
-      addLog(`Stream stopped: ${data.message || 'OK'}`);
+      addLog(`Stream stopped: ${data.message || data.status || 'OK'}`);
       set({ streamRunning: false });
-    } catch { addLog('Stream stop failed'); }
+      return data;
+    } catch (err) { 
+      console.error('stopStream error:', err);
+      addLog('Stream stop failed'); 
+      set({ streamRunning: false });
+      return { status: 'error', message: err.message };
+    }
   },
 
   resetStream: async () => {
@@ -931,7 +957,8 @@ export const useStore = create((set, get) => ({
       previousState: null, 
       timelineHistory: [], 
       riskHistory: [], 
-      trajectory: [] 
+      trajectory: [],
+      streamRunning: false
     }));
     get().addLog('Stream reset — Current session cleared');
   },

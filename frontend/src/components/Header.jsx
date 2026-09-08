@@ -55,7 +55,7 @@ function SensorAnnunciator({ label, active }) {
 
 export default function Header() {
   const { 
-    currentPage, viewMode, setViewMode, connectionStatus, 
+    currentPage, setPage, viewMode, setViewMode, connectionStatus, 
     telemetry, uploadVideo, feedMode, switchToLiveFeed,
     currentUser, switchUserRole 
   } = useStore();
@@ -113,7 +113,15 @@ export default function Header() {
     <header className="header">
       <div className="header-left">
         {/* Betaflight-Style Tactical Brand */}
-        <div className="header-brand">
+        <div 
+          className="header-brand"
+          onClick={() => setPage('dashboard')}
+          title="Return to Dashboard"
+          role="button"
+          tabIndex={0}
+          onKeyDown={(e) => e.key === 'Enter' && setPage('dashboard')}
+          style={{ cursor: 'pointer', userSelect: 'none' }}
+        >
           <div>
             <div className="header-brand-title">
               HYDRO-VISION <span style={{ color: '#fff', fontSize: '0.72rem', opacity: 0.8 }}>// 3D</span>
@@ -201,7 +209,7 @@ export default function Header() {
         )}
 
         {/* Feed Mode Indicator / Switcher */}
-        {isAdmin && currentPage !== 'municipal' && (
+        {isAdmin && isDashboard && (
           <>
             {!isLive ? (
               <button

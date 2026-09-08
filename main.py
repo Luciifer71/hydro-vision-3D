@@ -1368,7 +1368,7 @@ MUNICIPAL_USERS = {
         "role": "employee",
         "designation": "Ward 1 Field Operations Inspector",
         "department": "Civic Remediation Division",
-        "ward": "Ward 1 (North Sector)",
+        "ward": "Ward 1 (Nyay Mandir)",
         "permissions": [
             "hazard:view",
             "hazard:upload_proof",
@@ -1522,15 +1522,16 @@ async def upload_video(file: UploadFile = File(...),
 
 @app.get("/api/stream/start")
 @app.post("/api/stream/start")
-def start_stream():
+def start_stream(video_path: Optional[str] = None):
     # Always a fresh session: replaying without resetting the registry made
     # detection counts accumulate across runs while frame_count restarted.
-    if SESSION.streaming:
+    target_path = video_path or SESSION.video_path or DEFAULT_VIDEO_PATH
+    if SESSION.streaming and SESSION.video_path == target_path:
         return {"status": "already_running", "session_id": SESSION.session_id}
     _prune_old_sessions()
-    SESSION.new_session(SESSION.video_path)
+    SESSION.new_session(target_path)
     SESSION.active = True
-    return {"status": "success", "session_id": SESSION.session_id}
+    return {"status": "success", "session_id": SESSION.session_id, "video_path": target_path}
 
 
 @app.get("/api/stream/stop")

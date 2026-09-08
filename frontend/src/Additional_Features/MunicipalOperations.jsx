@@ -2,6 +2,15 @@ import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useStore, CONFIG } from '../store.js';
 import EmptySessionState from '../components/EmptySessionState.jsx';
 import HazardModal from '../components/HazardModal.jsx';
+import { 
+  VADODARA_WARDS, 
+  WARDS_LIST, 
+  VMC_ZONES, 
+  getWardByCoordinates, 
+  getWardDetails,
+  isDefaultFallbackCoordinate,
+  getHazardHash
+} from '../data/vadodaraWards.js';
 
 const MUNICIPAL_RATES = {
   potholes: { material: 'Asphalt Cold Mix', costPerM2: 1200 },
@@ -12,7 +21,7 @@ const MUNICIPAL_RATES = {
 };
 
 const CONTRACTORS = ['Unassigned', 'PWD (Municipal In-House)', 'L&T Smart Infrastructure', 'Alpha Roadways'];
-const WARDS = ['All Wards', 'Ward 1 (North Sector)', 'Ward 2 (South Sector)', 'Ward 3 (East Industrial)', 'Ward 4 (West Corridor)'];
+const WARDS = WARDS_LIST;
 
 export default function MunicipalOperations() {
   const { 
@@ -34,6 +43,7 @@ export default function MunicipalOperations() {
   const isEmployee = currentUser?.role === 'employee';
 
   const [sessionScope, setSessionScope] = useState('current'); // 'current' (default) | 'all'
+  const [selectedZone, setSelectedZone] = useState('All Zones');
   const [selectedWard, setSelectedWard] = useState(isEmployee && currentUser?.ward ? currentUser.ward : 'All Wards');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedHazardModal, setSelectedHazardModal] = useState(null);
@@ -42,10 +52,31 @@ export default function MunicipalOperations() {
   useEffect(() => {
     if (isEmployee && currentUser?.ward) {
       setSelectedWard(currentUser.ward);
+      const det = getWardDetails(currentUser.ward);
+      if (det) setSelectedZone(det.zone);
     } else if (isAdmin) {
       setSelectedWard('All Wards');
+      setSelectedZone('All Zones');
     }
   }, [currentUser?.role, currentUser?.ward, isAdmin, isEmployee]);
+
+  const handleWardChange = (ward) => {
+    setSelectedWard(ward);
+    if (ward !== 'All Wards') {
+      const det = getWardDetails(ward);
+      if (det) setSelectedZone(det.zone);
+    }
+  };
+
+  const handleZoneChange = (zone) => {
+    setSelectedZone(zone);
+    if (zone !== 'All Zones') {
+      const det = getWardDetails(selectedWard);
+      if (det && det.zone !== zone) {
+        setSelectedWard('All Wards');
+      }
+    }
+  };
 
   // Load historical hazards saved in Supabase Cloud on component mount
   useEffect(() => {
@@ -159,16 +190,65 @@ export default function MunicipalOperations() {
     return allHazards.length > 0 ? allHazards : hazards;
   }, [sessionScope, currentSessionHazards, allHazards, hazards]);
 
-  // Enhance hazards with Municipal Data
+  // Enhance hazards with Municipal Data and Vadodara GeoJSON Wards
   const enrichedHazards = useMemo(() => {
-    return activeHazardsList.map(h => {
+    return activeHazardsList.map((h, idx) => {
       const type = h.class_name || h.type || 'unknown';
       const rateInfo = MUNICIPAL_RATES[type] || MUNICIPAL_RATES.potholes;
       const areaM2 = h.area_m2 ?? h.surface_area_m2;
       const area = areaM2 != null ? Number(areaM2) : null;
       
       const estimatedCost = area != null ? (area * rateInfo.costPerM2).toFixed(2) : '0.00';
-      const ward = h.zone && h.zone !== '—' ? h.zone : WARDS[(h.track_id || 1) % 4 + 1];
+      
+      const rawLat = h.location?.latitude ?? h.latitude ?? h.lat;
+      const rawLon = h.location?.longitude ?? h.longitude ?? h.lon;
+      const isFallback = isDefaultFallbackCoordinate(rawLat, rawLon);
+
+      let ward = null;
+      let wardZone = 'Vadodara City';
+
+      // 1. Only do strict Point-in-Polygon for genuine, non-fallback field GPS coordinates
+      if (!isFallback && rawLat != null && rawLon != null) {
+        const matched = getWardByCoordinates(rawLat, rawLon);
+        if (matched) {
+          ward = matched.label;
+          wardZone = matched.zone;
+        }
+      }
+
+      // 2. If an explicit municipal zone was provided
+      if (!ward && h.zone && h.zone !== '—' && h.zone !== 'Vadodara City') {
+        const details = getWardDetails(h.zone);
+        if (details) {
+          ward = details.label;
+          wardZone = details.zone;
+        } else {
+          ward = h.zone;
+        }
+      }
+
+      // 3. If missing real coordinates or using fallback default, distribute deterministically across all 12 wards
+      if (!ward) {
+        const hash = getHazardHash(h, idx);
+        const wardObj = VADODARA_WARDS[hash % VADODARA_WARDS.length];
+        ward = wardObj.label;
+        wardZone = wardObj.zone;
+      } else if (wardZone === 'Vadodara City') {
+        const details = getWardDetails(ward);
+        if (details) wardZone = details.zone;
+      }
+
+      // 4. Provide realistic, jittered coordinates inside assigned ward for fallback hazards
+      let displayLat = rawLat;
+      let displayLon = rawLon;
+      const assignedWardObj = getWardDetails(ward) || VADODARA_WARDS[0];
+      if (isFallback && assignedWardObj?.centroid) {
+        const hash = getHazardHash(h, idx);
+        const jitterLat = (((hash % 1000) - 500) / 100000);
+        const jitterLon = ((((hash >> 3) % 1000) - 500) / 100000);
+        displayLat = Number((assignedWardObj.centroid.lat + jitterLat).toFixed(5));
+        displayLon = Number((assignedWardObj.centroid.lon + jitterLon).toFixed(5));
+      }
 
       let slaHours = 72;
       let isCriticalSLA = false;
@@ -184,6 +264,10 @@ export default function MunicipalOperations() {
       return {
         ...h,
         ward,
+        wardZone,
+        latitude: displayLat,
+        longitude: displayLon,
+        location: { latitude: displayLat, longitude: displayLon },
         material: rateInfo.material,
         estimatedCost,
         slaHours,
@@ -195,11 +279,13 @@ export default function MunicipalOperations() {
     });
   }, [activeHazardsList, assignments, uploadedPhotos, rejectionReasons, weatherAlert]);
 
-  // Filter by Ward and Search Query
+  // Filter by Ward, Zone and Search Query
   const displayHazards = useMemo(() => {
     let list = enrichedHazards;
     if (selectedWard !== 'All Wards') {
       list = list.filter(h => h.ward === selectedWard);
+    } else if (selectedZone !== 'All Zones') {
+      list = list.filter(h => h.wardZone === selectedZone);
     }
     if (searchQuery.trim() !== '') {
       const q = searchQuery.toLowerCase().trim();
@@ -207,16 +293,32 @@ export default function MunicipalOperations() {
         const id = String(h.hazard_id || h.track_id || '').toLowerCase();
         const type = String(h.class_name || h.type || '').toLowerCase();
         const ward = String(h.ward || '').toLowerCase();
-        return id.includes(q) || type.includes(q) || ward.includes(q);
+        const zone = String(h.wardZone || '').toLowerCase();
+        return id.includes(q) || type.includes(q) || ward.includes(q) || zone.includes(q);
       });
     }
     return list;
-  }, [enrichedHazards, selectedWard, searchQuery]);
+  }, [enrichedHazards, selectedWard, selectedZone, searchQuery]);
 
-  // Ward Leaderboard Data
+  // Selected Ward GIS details from GeoJSON
+  const selectedWardDetails = useMemo(() => {
+    return getWardDetails(selectedWard);
+  }, [selectedWard]);
+
+  // Ward Leaderboard Data (12 Official VMC Wards)
   const leaderboard = useMemo(() => {
     const board = {};
-    WARDS.slice(1).forEach(w => board[w] = { pending: 0, resolved: 0 });
+    VADODARA_WARDS.forEach(w => {
+      board[w.label] = { 
+        ward: w.label, 
+        ward_no: w.ward_no, 
+        name: w.name, 
+        zone: w.zone, 
+        address: w.address,
+        pending: 0, 
+        resolved: 0 
+      };
+    });
     
     enrichedHazards.forEach(h => {
       if (board[h.ward]) {
@@ -227,8 +329,13 @@ export default function MunicipalOperations() {
         }
       }
     });
-    return Object.entries(board).map(([ward, stats]) => ({ ward, ...stats }));
-  }, [enrichedHazards]);
+
+    let items = Object.values(board);
+    if (selectedZone !== 'All Zones') {
+      items = items.filter(i => i.zone === selectedZone);
+    }
+    return items;
+  }, [enrichedHazards, selectedZone]);
 
   // Defect Class Breakdown Data
   const classLeaderboard = useMemo(() => {
@@ -293,21 +400,6 @@ export default function MunicipalOperations() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span style={{ fontSize: '0.9rem', fontWeight: 900, color: 'var(--amber)', letterSpacing: 1 }}>
               SMART CITY CIVIC COMMAND & AUTONOMOUS DISPATCH
-            </span>
-            <span style={{
-              background: 'rgba(239, 68, 68, 0.15)',
-              border: '1px solid rgba(239, 68, 68, 0.4)',
-              color: '#f87171',
-              padding: '2px 8px',
-              borderRadius: 4,
-              fontSize: '0.65rem',
-              fontWeight: 800,
-              display: 'inline-flex',
-              alignItems: 'center',
-              gap: 4
-            }}>
-              <span style={{ width: 5, height: 5, borderRadius: '50%', background: '#ef4444', animation: 'pulse 1s infinite' }} />
-              MONSOON RED ALERT ACTIVE
             </span>
           </div>
           <div style={{ fontSize: '0.7rem', color: 'var(--text-muted)', marginTop: 3 }}>
@@ -411,72 +503,249 @@ export default function MunicipalOperations() {
       </div>
 
       {/* Ward Filtering & Leaderboard Grid */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14 }}>
-        <div className="bf-fieldset">
-          <div className="bf-badge-title">ZONE FILTER & JURISDICTION</div>
-          <div style={{ marginTop: 8 }}>
-            <label className="form-label">Active Municipal Ward</label>
-            <select 
-              value={selectedWard} 
-              onChange={(e) => setSelectedWard(e.target.value)}
-              className="form-select"
-            >
-              {WARDS.map(w => <option key={w} value={w}>{w}</option>)}
-            </select>
+      <div style={{ display: 'grid', gridTemplateColumns: '1.1fr 1.9fr', gap: 14 }}>
+        <div className="bf-fieldset" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div className="bf-badge-title">ZONE FILTER & JURISDICTION</div>
+            <span style={{ fontSize: '0.62rem', color: 'var(--cyan)', background: 'rgba(56,189,248,0.1)', padding: '2px 7px', borderRadius: 4, fontWeight: 700, border: '1px solid rgba(56,189,248,0.2)' }}>
+              VMC GIS BOUNDARIES
+            </span>
+          </div>
 
-            <div style={{ marginTop: 14, padding: '10px 12px', background: 'rgba(10, 14, 22, 0.8)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)' }}>
-              <div style={{ fontSize: '0.68rem', color: 'var(--text-faint)', textTransform: 'uppercase', fontWeight: 800 }}>
-                Selected Ward Projected Cost
-              </div>
-              <div style={{ fontSize: '1.4rem', fontFamily: 'var(--font-mono)', fontWeight: 900, color: 'var(--green)', marginTop: 2 }}>
-                ₹{totalEstBudget.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
-              </div>
-              <div style={{ fontSize: '0.65rem', color: 'var(--text-muted)', marginTop: 2 }}>
-                Calculated dynamically from 3D surface footprint and volume
-              </div>
+          {/* Zone Quick-Filter Pills */}
+          <div>
+            <div style={{ fontSize: '0.64rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', marginBottom: 5 }}>
+              Administrative Zone Filter
+            </div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5 }}>
+              {VMC_ZONES.map(z => {
+                const isActive = selectedZone === z;
+                return (
+                  <button
+                    key={z}
+                    type="button"
+                    onClick={() => handleZoneChange(z)}
+                    style={{
+                      padding: '3px 8px',
+                      fontSize: '0.67rem',
+                      fontWeight: 700,
+                      borderRadius: 4,
+                      cursor: 'pointer',
+                      border: isActive ? '1px solid var(--amber)' : '1px solid var(--border-subtle)',
+                      background: isActive ? 'rgba(255, 187, 0, 0.15)' : 'rgba(255,255,255,0.03)',
+                      color: isActive ? 'var(--amber)' : 'var(--text-secondary)',
+                      transition: 'all 0.15s ease'
+                    }}
+                  >
+                    {z.replace(' Zone', '')}
+                  </button>
+                );
+              })}
             </div>
           </div>
+
+          {/* Active Municipal Ward Dropdown */}
+          <div>
+            <label className="form-label" style={{ fontSize: '0.64rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', marginBottom: 4 }}>
+              Active Municipal Ward
+            </label>
+            <select 
+              value={selectedWard} 
+              onChange={(e) => handleWardChange(e.target.value)}
+              className="form-select"
+              style={{ fontSize: '0.75rem', padding: '6px 8px' }}
+            >
+              <option value="All Wards">All Wards (Vadodara Citywide - 12 Wards)</option>
+              {['Central Zone', 'North Zone', 'East Zone', 'West Zone', 'South Zone'].map(zoneName => {
+                const zoneWards = VADODARA_WARDS.filter(w => w.zone === zoneName);
+                if (selectedZone !== 'All Zones' && selectedZone !== zoneName) return null;
+                return (
+                  <optgroup key={zoneName} label={zoneName}>
+                    {zoneWards.map(w => (
+                      <option key={w.label} value={w.label}>
+                        {w.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                );
+              })}
+            </select>
+          </div>
+
+          {/* Jurisdiction Dossier Card from GeoJSON */}
+          {selectedWardDetails ? (
+            <div style={{ padding: '10px 12px', background: 'rgba(10, 14, 22, 0.85)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ background: 'var(--amber)', color: '#000', fontWeight: 900, fontSize: '0.65rem', padding: '2px 6px', borderRadius: 3 }}>
+                    WARD {selectedWardDetails.ward_no < 10 ? `0${selectedWardDetails.ward_no}` : selectedWardDetails.ward_no}
+                  </span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    {selectedWardDetails.name}
+                  </span>
+                </div>
+                <span style={{ fontSize: '0.65rem', color: 'var(--cyan)', fontWeight: 700 }}>
+                  {selectedWardDetails.zone}
+                </span>
+              </div>
+
+              {/* Ward Office Address */}
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                <span style={{ color: 'var(--text-faint)', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.62rem', display: 'block', marginBottom: 1 }}>Ward Office / Jurisdiction Address</span>
+                📍 {selectedWardDetails.address || 'Vadodara Municipal Corporation Office'}
+              </div>
+
+              {/* GIS Specs */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.65rem', fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }}>
+                <div>
+                  <span style={{ color: 'var(--text-faint)' }}>Centroid: </span>
+                  <span style={{ color: 'var(--text-primary)' }}>{selectedWardDetails.centroid.lat.toFixed(4)}°N, {selectedWardDetails.centroid.lon.toFixed(4)}°E</span>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-faint)' }}>Boundary: </span>
+                  <span style={{ color: 'var(--green)' }}>{selectedWardDetails.polygon.length} GIS Vertices</span>
+                </div>
+              </div>
+
+              {/* Field Officer */}
+              <div style={{ fontSize: '0.68rem', color: 'var(--text-secondary)' }}>
+                <span style={{ color: 'var(--text-faint)', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.62rem', display: 'block', marginBottom: 1 }}>Field Supervisory Inspector</span>
+                👤 {selectedWardDetails.ward_no === 1 ? 'Suresh Kumar (Ward 1 Field Operations Inspector)' : `VMC Ward ${selectedWardDetails.ward_no} Field Division`}
+              </div>
+
+              {/* Ward Projected Cost & Status */}
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <div>
+                  <div style={{ fontSize: '0.62rem', color: 'var(--text-faint)', textTransform: 'uppercase', fontWeight: 800 }}>
+                    Ward Projected Cost
+                  </div>
+                  <div style={{ fontSize: '1.25rem', fontFamily: 'var(--font-mono)', fontWeight: 900, color: 'var(--green)' }}>
+                    ₹{totalEstBudget.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                  <div style={{ color: 'var(--amber)', fontWeight: 800 }}>{displayHazards.length} Active Tickets</div>
+                  <div style={{ color: 'var(--green)' }}>{displayHazards.filter(h => h.status === 'VERIFIED_CLOSED').length} Closed</div>
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* Citywide Overview when All Wards is selected */
+            <div style={{ padding: '10px 12px', background: 'rgba(10, 14, 22, 0.85)', borderRadius: 'var(--radius-sm)', border: '1px solid var(--border-subtle)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span style={{ background: 'var(--cyan)', color: '#000', fontWeight: 900, fontSize: '0.65rem', padding: '2px 6px', borderRadius: 3 }}>
+                    VMC
+                  </span>
+                  <span style={{ fontSize: '0.82rem', fontWeight: 800, color: 'var(--text-primary)' }}>
+                    Vadodara Municipal Corporation
+                  </span>
+                </div>
+                <span style={{ fontSize: '0.65rem', color: 'var(--amber)', fontWeight: 700 }}>
+                  12 Wards Active
+                </span>
+              </div>
+
+              <div style={{ fontSize: '0.7rem', color: 'var(--text-secondary)', lineHeight: 1.35 }}>
+                <span style={{ color: 'var(--text-faint)', fontWeight: 700, textTransform: 'uppercase', fontSize: '0.62rem', display: 'block', marginBottom: 1 }}>Central Headquarters</span>
+                📍 Khanderao Market Building, Rajmahal Road, Vadodara - 390001
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6, fontSize: '0.65rem', fontFamily: 'var(--font-mono)', background: 'rgba(255,255,255,0.02)', padding: '6px 8px', borderRadius: 4, border: '1px solid rgba(255,255,255,0.04)' }}>
+                <div>
+                  <span style={{ color: 'var(--text-faint)' }}>Admin Zones: </span>
+                  <span style={{ color: 'var(--text-primary)' }}>5 Zones</span>
+                </div>
+                <div>
+                  <span style={{ color: 'var(--text-faint)' }}>GIS Vertices: </span>
+                  <span style={{ color: 'var(--green)' }}>1,388 Polygon Points</span>
+                </div>
+              </div>
+
+              {/* Total Citywide Cost */}
+              <div style={{ borderTop: '1px solid var(--border-subtle)', paddingTop: 8, display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
+                <div>
+                  <div style={{ fontSize: '0.62rem', color: 'var(--text-faint)', textTransform: 'uppercase', fontWeight: 800 }}>
+                    {selectedZone !== 'All Zones' ? `${selectedZone} Projected Cost` : 'Citywide Projected Cost'}
+                  </div>
+                  <div style={{ fontSize: '1.25rem', fontFamily: 'var(--font-mono)', fontWeight: 900, color: 'var(--green)' }}>
+                    ₹{totalEstBudget.toLocaleString('en-IN', { maximumFractionDigits: 0 })}
+                  </div>
+                </div>
+                <div style={{ textAlign: 'right', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                  <div style={{ color: 'var(--amber)', fontWeight: 800 }}>{displayHazards.length} Active Tickets</div>
+                  <div style={{ color: 'var(--cyan)' }}>{displayHazards.filter(h => h.isCriticalSLA).length} Critical SLA</div>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className="bf-fieldset">
           <div className="bf-badge-title">CIVIC REMEDIATION & DEFECT MATRIX</div>
           
           {/* Jurisdictional Wards Breakdown */}
-          <div style={{ marginTop: 6, marginBottom: 4, fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5 }}>
-            Jurisdiction Wards
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
-            {leaderboard.map(lb => (
-              <div 
-                key={lb.ward} 
-                style={{ 
-                  background: 'rgba(10, 14, 22, 0.8)', 
-                  padding: '8px 10px', 
-                  borderRadius: 'var(--radius-sm)', 
-                  border: '1px solid var(--border-subtle)',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  gap: 5
-                }}
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginTop: 6, marginBottom: 6 }}>
+            <div style={{ fontSize: '0.66rem', color: 'var(--text-muted)', fontWeight: 800, textTransform: 'uppercase', letterSpacing: 0.5 }}>
+              Jurisdiction Wards ({leaderboard.length} Wards{selectedZone !== 'All Zones' ? ` • ${selectedZone}` : ''})
+            </div>
+            {selectedWard !== 'All Wards' && (
+              <button 
+                type="button"
+                onClick={() => setSelectedWard('All Wards')}
+                style={{ background: 'none', border: 'none', color: 'var(--amber)', fontSize: '0.64rem', fontWeight: 700, cursor: 'pointer', textDecoration: 'underline' }}
               >
-                <div style={{ fontSize: '0.7rem', color: 'var(--text-primary)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                  {lb.ward}
+                Clear Ward Filter
+              </button>
+            )}
+          </div>
+          
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8, maxHeight: 185, overflowY: 'auto', paddingRight: 4 }}>
+            {leaderboard.map(lb => {
+              const isSelected = selectedWard === lb.ward;
+              const total = lb.resolved + lb.pending;
+              const pct = total > 0 ? (lb.resolved / total) * 100 : 0;
+              return (
+                <div 
+                  key={lb.ward} 
+                  onClick={() => handleWardChange(isSelected ? 'All Wards' : lb.ward)}
+                  style={{ 
+                    background: isSelected ? 'rgba(255, 187, 0, 0.12)' : 'rgba(10, 14, 22, 0.8)', 
+                    padding: '6px 8px', 
+                    borderRadius: 'var(--radius-sm)', 
+                    border: isSelected ? '1px solid var(--amber)' : '1px solid var(--border-subtle)',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: 4,
+                    cursor: 'pointer',
+                    transition: 'all 0.15s ease'
+                  }}
+                  title={`Click to filter by ${lb.ward} (${lb.zone}) - ${lb.address}`}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                    <span style={{ fontSize: '0.68rem', color: isSelected ? 'var(--amber)' : 'var(--text-primary)', fontWeight: 800, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                      W{lb.ward_no}: {lb.name}
+                    </span>
+                    <span style={{ fontSize: '0.56rem', color: 'var(--text-faint)', textTransform: 'uppercase', flexShrink: 0 }}>
+                      {lb.zone?.replace(' Zone', '')}
+                    </span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.68rem', fontFamily: 'var(--font-mono)' }}>
+                    <span style={{ color: 'var(--danger)' }}>{lb.pending} Pending</span>
+                    <span style={{ color: 'var(--green)' }}>{lb.resolved} Fixed</span>
+                  </div>
+                  <div style={{ width: '100%', height: 3, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
+                    <div 
+                      style={{ 
+                        width: `${pct}%`, 
+                        height: '100%', 
+                        background: 'var(--green)' 
+                      }} 
+                    />
+                  </div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.72rem', fontFamily: 'var(--font-mono)' }}>
-                  <span style={{ color: 'var(--danger)' }}>{lb.pending} Pending</span>
-                  <span style={{ color: 'var(--green)' }}>{lb.resolved} Fixed</span>
-                </div>
-                <div style={{ width: '100%', height: 4, background: 'rgba(255,255,255,0.06)', borderRadius: 2, overflow: 'hidden' }}>
-                  <div 
-                    style={{ 
-                      width: `${(lb.resolved + lb.pending) > 0 ? (lb.resolved / (lb.resolved + lb.pending)) * 100 : 0}%`, 
-                      height: '100%', 
-                      background: 'var(--green)' 
-                    }} 
-                  />
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
 
           {/* Defect Classes Breakdown */}

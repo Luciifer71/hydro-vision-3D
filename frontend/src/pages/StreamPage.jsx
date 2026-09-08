@@ -84,8 +84,16 @@ export default function StreamPage() {
           </div>
 
           <div className="btn-group" style={{ marginTop: 14 }}>
-            <button className="btn btn-primary" onClick={startStream}>
-              ▶ Start Ingestion Stream
+            <button 
+              className="btn btn-primary" 
+              onClick={() => startStream()}
+              style={{
+                background: streamRunning ? 'linear-gradient(135deg, #10b981, #059669)' : undefined,
+                color: streamRunning ? '#061e14' : undefined,
+                boxShadow: streamRunning ? '0 0 12px rgba(16, 185, 129, 0.4)' : undefined
+              }}
+            >
+              {streamRunning ? '● Ingestion Active' : '▶ Start Ingestion Stream'}
             </button>
             <button className="btn btn-danger" onClick={stopStream}>
               ■ Stop Stream
@@ -105,17 +113,26 @@ export default function StreamPage() {
       <div className="bf-fieldset">
         <div className="bf-badge-title">INSPECTION FOOTAGE SOURCE</div>
         <div style={{ marginTop: 8 }}>
-          <div className="form-group">
-            <label className="form-label">Video File Path or Remote Stream URL</label>
-            <input 
-              className="form-input" 
-              type="text" 
-              value={videoPath || ''} 
-              onChange={e => setVideoPath(e.target.value)} 
-              placeholder="data/raw_videos/master_video.mp4" 
-            />
+          <div className="form-group" style={{ display: 'flex', gap: 10, alignItems: 'flex-end' }}>
+            <div style={{ flex: 1 }}>
+              <label className="form-label">Video File Path or Remote Stream URL</label>
+              <input 
+                className="form-input" 
+                type="text" 
+                value={videoPath || ''} 
+                onChange={e => setVideoPath(e.target.value)} 
+                placeholder="data/raw_videos/master_video.mp4" 
+              />
+            </div>
+            <button 
+              className="btn btn-outline"
+              onClick={() => startStream(videoPath)}
+              style={{ borderColor: 'var(--amber)', color: 'var(--amber)', whiteSpace: 'nowrap' }}
+            >
+              Load & Process Path
+            </button>
           </div>
-          <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>
+          <p style={{ fontSize: '0.72rem', color: 'var(--text-muted)', marginTop: 6 }}>
             Path is relative to backend storage. Changing this auto-switches feed mode to Recorded Video Analysis.
           </p>
         </div>
@@ -148,11 +165,19 @@ export default function StreamPage() {
 
       {/* Real-time Connection Log */}
       <div className="bf-fieldset">
-        <div className="bf-badge-title">SYSTEM EVENT TELEMETRY LOG</div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div className="bf-badge-title">SYSTEM EVENT TELEMETRY LOG</div>
+          <button 
+            onClick={() => useStore.setState({ logs: ['Telemetry log cleared'] })}
+            style={{ background: 'transparent', border: 'none', color: 'var(--text-faint)', fontSize: '0.68rem', cursor: 'pointer' }}
+          >
+            Clear Log
+          </button>
+        </div>
         <div className="conn-log" style={{ marginTop: 8 }}>
           {logs.map((log, i) => (
             <div key={i} style={{ color: i === 0 ? 'var(--green)' : 'var(--text-muted)' }}>
-              <span className="log-time">[{new Date().toLocaleTimeString('en-US', { hour12: false })}]</span> {log}
+              {log}
             </div>
           ))}
         </div>

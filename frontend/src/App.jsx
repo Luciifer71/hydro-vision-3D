@@ -6,7 +6,6 @@ import TelemetryBar from './components/TelemetryBar.jsx';
 import DashboardPage from './pages/DashboardPage.jsx';
 import MapPage from './pages/MapPage.jsx';
 import DetectionsPage from './pages/DetectionsPage.jsx';
-import AlertsPage from './pages/AlertsPage.jsx';
 import RiskPage from './pages/RiskPage.jsx';
 import AreaAnalyticsPage from './pages/AreaAnalyticsPage.jsx';
 import DepthPage from './pages/DepthPage.jsx';
@@ -37,7 +36,7 @@ export default function App() {
     dashboard: <DashboardPage />,
     map: <MapPage />,
     detections: <DetectionsPage />,
-    alerts: <AlertsPage />,
+    alerts: <DetectionsPage />,
     risk: <RiskPage />,
     volumetric: <AreaAnalyticsPage />,
     depth: <DepthPage />,
