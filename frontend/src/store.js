@@ -1105,9 +1105,8 @@ export const useStore = create((set, get) => ({
         const parsed = dbHazards.map((h, idx) => {
           const lat = Number(h.latitude ?? 22.3072);
           const lon = Number(h.longitude ?? 73.1812);
-          const className = h.class_name || 'potholes';
-          const volumeM3 = h.volumetric_m3 != null ? Number(h.volumetric_m3) : (h.estimated_volume_m3 != null ? Number(h.estimated_volume_m3) : null);
-          const areaM2 = volumeM3 != null ? Number((volumeM3 / 0.05).toFixed(2)) : 5.0;
+          const depthIndex = h.volumetric_m3 != null ? Number(h.volumetric_m3) : (h.estimated_volume_m3 != null ? Number(h.estimated_volume_m3) : (h.relative_depth_index != null ? Number(h.relative_depth_index) : null));
+          const areaM2 = h.area_m2 != null ? Number(h.area_m2) : (h.surface_area_m2 != null ? Number(h.surface_area_m2) : 5.0);
           const hid = h.hazard_id || `HAZ-${String(idx + 1).padStart(4, '0')}`;
           const visualEvidenceUrl = h.visual_evidence_url || h.evidence_image || h.image_url || `/api/hazards/${hid}/evidence`;
 
@@ -1121,8 +1120,10 @@ export const useStore = create((set, get) => ({
             detections_count: h.detections_count || 1,
             area_m2: areaM2,
             surface_area_m2: areaM2,
-            volumetric_m3: volumeM3,
-            estimated_volume_m3: volumeM3,
+            volumetric_m3: depthIndex,
+            estimated_volume_m3: depthIndex,
+            relative_depth_index: depthIndex,
+            depth_index: depthIndex,
             wgs84_coords: h.wgs84_coords || { latitude: lat, longitude: lon, lat, lon },
             severity: severityFromArea(areaM2),
             severity_band: severityFromArea(areaM2),

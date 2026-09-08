@@ -759,6 +759,18 @@ def _sync_to_supabase_cloud(hazards_list: List[Dict[str, Any]]) -> None:
     try:
         url = "https://lkfpdrskgfffwtzbtlnq.supabase.co/rest/v1/hazards?on_conflict=hazard_id"
         key = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxrZnBkcnNrZ2ZmZnd0emJ0bG5xIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODc1MDEyNzYsImV4cCI6MjEwMzA3NzI3Nn0.suk69wAZtVKR62BI5QpEFCGfUVKyy_mY6IslM9zoxHw"
+        # Dynamically inspect hazards table schema to support renamed columns (depth_index / volumetric_m3)
+        known_cols = set()
+        try:
+            col_req = urllib.request.Request("https://lkfpdrskgfffwtzbtlnq.supabase.co/rest/v1/hazards?select=*&limit=1",
+                                             headers={"apikey": key, "Authorization": f"Bearer {key}"})
+            with urllib.request.urlopen(col_req, timeout=5) as c_resp:
+                sample = json.loads(c_resp.read().decode())
+                if sample:
+                    known_cols = set(sample[0].keys())
+        except Exception:
+            pass
+
         payload = []
         for idx, h in enumerate(hazards_list):
             lat = float(h.get("lat") or h.get("latitude") or 22.3072)
@@ -767,10 +779,12 @@ def _sync_to_supabase_cloud(hazards_list: List[Dict[str, Any]]) -> None:
             class_id = int(h.get("class_id") if h.get("class_id") is not None else 0)
             conf = float(round(h.get("confidence_max") or h.get("confidence") or 0.85, 4))
             hid = h.get("hazard_id") or f"HAZ-{idx+1:04d}"
-            area = h.get("area_m2") or h.get("surface_area_m2")
-            vol = round(float(area) * 0.05, 4) if area else 0.025
+            depth_idx = h.get("relative_depth_index")
+            if depth_idx is None:
+                depth_idx = h.get("depth_index")
+            depth_val = round(float(depth_idx), 4) if depth_idx is not None else None
 
-            payload.append({
+            rec = {
                 "hazard_id": hid,
                 "ticket_id": hid,
                 "class_id": class_id,
@@ -778,8 +792,6 @@ def _sync_to_supabase_cloud(hazards_list: List[Dict[str, Any]]) -> None:
                 "confidence": conf,
                 "latitude": lat,
                 "longitude": lon,
-                "volumetric_m3": vol,
-                "estimated_volume_m3": vol,
                 "wgs84_coords": {"latitude": lat, "longitude": lon, "lat": lat, "lon": lon},
                 "location": f"POINT({lon} {lat})",
                 "detections_count": int(h.get("detections_count") or 1),
@@ -787,7 +799,20 @@ def _sync_to_supabase_cloud(hazards_list: List[Dict[str, Any]]) -> None:
                 "last_detected": datetime.now(timezone.utc).isoformat(),
                 "first_detected_ist": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST"),
                 "last_detected_ist": datetime.now().strftime("%Y-%m-%d %H:%M:%S IST")
-            })
+            }
+
+            if not known_cols:
+                rec["volumetric_m3"] = depth_val
+                rec["estimated_volume_m3"] = depth_val
+            else:
+                if "depth_index" in known_cols:
+                    rec["depth_index"] = depth_val
+                if "volumetric_m3" in known_cols:
+                    rec["volumetric_m3"] = depth_val
+                if "estimated_volume_m3" in known_cols:
+                    rec["estimated_volume_m3"] = depth_val
+
+            payload.append(rec)
 
         req = urllib.request.Request(
             url,

@@ -1,4 +1,5 @@
 import React from 'react';
+import { formatAreaM2 } from '../lib/derive.js';
 
 export default function HazardFeed({ hazards = [], activeHazards = 0 }) {
   const displayList = [...hazards].reverse().slice(0, 15);
@@ -10,7 +11,9 @@ export default function HazardFeed({ hazards = [], activeHazards = 0 }) {
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
           <circle cx="12" cy="12" r="10" />
           <line x1="12" y1="8" x2="12" y2="12" />
-          <line x1="12" y1="16" x2="12.01" y2="16" />
+          <line x1="6" y1="12" x2="2" y2="12" />
+          <line x1="12" y1="6" x2="12" y2="2" />
+          <line x1="12" y1="22" x2="12" y2="18" />
         </svg>
         LIVE HAZARD LOG ({activeHazards})
       </div>
@@ -23,8 +26,7 @@ export default function HazardFeed({ hazards = [], activeHazards = 0 }) {
           </div>
         ) : (
           displayList.map((h, i) => {
-            const areaM2 = h.area_m2 ?? h.surface_area_m2;
-            const areaText = areaM2 != null ? `${Number(areaM2).toFixed(1)} m²` : (h.area_px != null ? `${Math.round(h.area_px)} px²` : '—');
+            const areaText = formatAreaM2(h);
             const sev = (h.severity || 'LOW').toUpperCase();
             const className = (h.class_name || h.type || 'HAZARD').replace(/_/g, ' ');
 

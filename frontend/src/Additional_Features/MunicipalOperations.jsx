@@ -11,6 +11,7 @@ import {
   isDefaultFallbackCoordinate,
   getHazardHash
 } from '../data/vadodaraWards.js';
+import { formatAreaM2 } from '../lib/derive.js';
 
 const MUNICIPAL_RATES = {
   potholes: { material: 'Asphalt Cold Mix', costPerM2: 1200 },
@@ -982,7 +983,7 @@ export default function MunicipalOperations() {
                         ₹{parseFloat(h.estimatedCost).toLocaleString('en-IN')}
                       </div>
                       <div style={{ fontSize: '0.68rem', color: 'var(--text-faint)' }}>
-                        {(h.area_m2 ?? h.surface_area_m2) != null ? `${Number(h.area_m2 ?? h.surface_area_m2).toFixed(1)} m²` : (h.area_px != null ? `${Math.round(h.area_px)} px²` : '—')} ({h.material})
+                        {formatAreaM2(h)} ({h.material})
                       </div>
                     </td>
                     <td>

@@ -30,12 +30,21 @@ class SupabaseHazardSync:
         """
         records = []
         for c in clusters:
+            depth_val = c.get('relative_depth_index') or c.get('depth_index') or c.get('depth')
+            if depth_val is not None:
+                val = round(float(depth_val), 4)
+            elif c.get('volume_m3') is not None:
+                val = round(float(c['volume_m3']), 4)
+            else:
+                val = None
+
             record = {
                 "hazard_id": c['cluster_id'],
                 "class_id": c['class_id'],
                 "class_name": c['class_name'],
                 "confidence": round(float(c['max_confidence']), 4),
-                "estimated_volume_m3": round(float(c['volume_m3']), 4),
+                "estimated_volume_m3": val,
+                "volumetric_m3": val,
                 "detections_count": int(c['observation_count']),
                 "latitude": float(c['lat']),
                 "longitude": float(c['lon']),

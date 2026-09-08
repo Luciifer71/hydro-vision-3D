@@ -70,12 +70,67 @@ export function computeSessionRisk(hazards = [], summary = {}) {
   };
 }
 
-/** Severity counts for charts. Reads severity_band, the actual schema field. */
-export function severityCounts(hazards = []) {
-  const counts = { LOW: 0, MODERATE: 0, HIGH: 0, CRITICAL: 0 };
-  hazards.forEach((h) => {
-    const s = (h.severity_band || '').toUpperCase();
-    if (counts[s] !== undefined) counts[s]++;
-  });
-  return counts;
+/**
+ * Formats hazard footprint area in square metres (m²).
+ * Automatically converts raw pixel area (px²) using photogrammetric GSD when m² is not present.
+ */
+export function formatAreaM2(hazardOrArea, areaPx = null) {
+  let m2 = null;
+  let px = null;
+
+  if (hazardOrArea != null && typeof hazardOrArea === 'object') {
+    m2 = hazardOrArea.area_m2 ?? hazardOrArea.surface_area_m2;
+    px = hazardOrArea.area_px;
+    if (m2 == null && (hazardOrArea.estimated_volume_m3 != null || hazardOrArea.volumetric_m3 != null)) {
+      const vol = Number(hazardOrArea.estimated_volume_m3 ?? hazardOrArea.volumetric_m3);
+      m2 = vol / 0.05;
+    }
+  } else if (typeof hazardOrArea === 'number') {
+    m2 = hazardOrArea;
+    px = areaPx;
+  } else {
+    px = areaPx;
+  }
+
+  if (m2 != null && !isNaN(Number(m2)) && Number(m2) > 0) {
+    return `${Number(m2).toFixed(1)} m²`;
+  }
+
+  if (px != null && !isNaN(Number(px)) && Number(px) > 0) {
+    // Photogrammetric GSD conversion: ~0.00773 m/px -> area_px * (0.00773)^2 ≈ area_px * 0.00006
+    const converted = Number(px) * 0.00006;
+    return `${converted.toFixed(1)} m²`;
+  }
+
+  return '—';
 }
+
+/**
+ * Calculates numeric area in m² from either m² or px².
+ */
+export function getNumericAreaM2(hazardOrArea, areaPx = null) {
+  let m2 = null;
+  let px = null;
+
+  if (hazardOrArea != null && typeof hazardOrArea === 'object') {
+    m2 = hazardOrArea.area_m2 ?? hazardOrArea.surface_area_m2;
+    px = hazardOrArea.area_px;
+    if (m2 == null && (hazardOrArea.estimated_volume_m3 != null || hazardOrArea.volumetric_m3 != null)) {
+      const vol = Number(hazardOrArea.estimated_volume_m3 ?? hazardOrArea.volumetric_m3);
+      m2 = vol / 0.05;
+    }
+  } else if (typeof hazardOrArea === 'number') {
+    m2 = hazardOrArea;
+    px = areaPx;
+  } else {
+    px = areaPx;
+  }
+
+  if (m2 != null && !isNaN(Number(m2))) {
+    return Number(m2);
+  }
+  if (px != null && !isNaN(Number(px))) {
+    return Number(px) * 0.00006;
+  }
+  return 0;
+}

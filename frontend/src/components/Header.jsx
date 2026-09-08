@@ -124,10 +124,10 @@ export default function Header() {
         >
           <div>
             <div className="header-brand-title">
-              HYDRO-VISION <span style={{ color: '#fff', fontSize: '0.72rem', opacity: 0.8 }}>// 3D</span>
+              HYDRO-VISION 3D
             </div>
             <div className="header-brand-subtitle">
-              TACTICAL GCS · ELCIA HACKATHON 2026
+              ELCIA HACKATHON 2026
             </div>
           </div>
         </div>
@@ -140,9 +140,7 @@ export default function Header() {
               onClick={() => setViewMode('fly')}
             >
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <circle cx="12" cy="12" r="9" />
-                <path d="M12 3v18" />
-                <path d="M3 12h18" />
+                <polygon points="12 2 19 21 12 17 5 21 12 2" />
               </svg>
               FLY HUD
             </button>
@@ -172,13 +170,17 @@ export default function Header() {
       </div>
 
       <div className="header-right">
-        {/* Mission Clock (Local Time) */}
+        {/* Mission Clock & Date (Local Station Time) */}
         <div 
           className="header-time"
-          title={`Local Station Time: ${time.toLocaleTimeString()}\nUTC: ${time.toUTCString().slice(17, 25)}`}
+          title={`Local Station Time: ${time.toLocaleString()}\nUTC: ${time.toUTCString()}`}
+          style={{ display: 'flex', alignItems: 'center', gap: 8 }}
         >
-          <span style={{ color: 'var(--amber)', marginRight: 6 }}>TIME</span>
-          {time.toLocaleTimeString('en-US', { hour12: false })}
+          <span style={{ color: 'var(--amber)', fontWeight: 700, fontSize: '0.72rem' }}>
+            {time.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }).toUpperCase()}
+          </span>
+          <span style={{ color: 'var(--text-faint)' }}>·</span>
+          <span>{time.toLocaleTimeString('en-US', { hour12: false })}</span>
         </div>
 
         {/* Battery Telemetry Widget (Live Feed Only) */}

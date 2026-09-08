@@ -2,6 +2,7 @@ import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import { Chart as ChartJS, CategoryScale, LinearScale, BarElement, Title, Tooltip, Legend } from 'chart.js';
 import { useStore } from '../store.js';
+import { formatAreaM2, getNumericAreaM2 } from '../lib/derive.js';
 import EmptySessionState from '../components/EmptySessionState.jsx';
 import ErrorBoundary from '../components/ErrorBoundary.jsx';
 
@@ -12,26 +13,21 @@ export default function DepthPage() {
   const { hazards = [], currentState } = useStore();
 
   const metrics = useMemo(() => {
-    let totalArea = 0;
-    let totalAreaPx = 0;
+    let totalAreaM2 = 0;
     let maxDepthIndex = 0;
     let depthSum = 0;
     let depthCount = 0;
     let metricCount = 0;
 
     const list = hazards.map((h, i) => {
-      const areaM2 = h.area_m2 ?? h.surface_area_m2;
-      const area = areaM2 != null ? Number(areaM2) : null;
-      const areaPx = h.area_px != null ? Number(h.area_px) : null;
+      const areaM2 = getNumericAreaM2(h);
+      const areaText = formatAreaM2(h);
       const depthIndex = h.relative_depth_index != null ? Number(h.relative_depth_index) : null;
       const conf = h.confidence != null ? Number(h.confidence) : (h.confidence_max != null ? Number(h.confidence_max) : null);
 
-      if (area != null) {
+      if (areaM2 > 0) {
         metricCount++;
-        totalArea += area;
-      }
-      if (areaPx != null) {
-        totalAreaPx += areaPx;
+        totalAreaM2 += areaM2;
       }
       if (depthIndex != null) {
         if (depthIndex > maxDepthIndex) maxDepthIndex = depthIndex;
@@ -42,8 +38,8 @@ export default function DepthPage() {
       return {
         id: h.hazard_id || h.track_id || `HAZ-${String(i + 1).padStart(4, '0')}`,
         className: h.class_name || h.type || 'unknown',
-        area,
-        areaPx,
+        areaM2,
+        areaText,
         depthIndex,
         confidence: conf,
         passes: h.detections_count || 1,
@@ -52,7 +48,7 @@ export default function DepthPage() {
     });
 
     const avgDepthIndex = depthCount > 0 ? depthSum / depthCount : 0;
-    return { list, totalArea, totalAreaPx, metricCount, maxDepthIndex, avgDepthIndex };
+    return { list, totalArea: totalAreaM2, metricCount, maxDepthIndex, avgDepthIndex };
   }, [hazards]);
 
   if (!currentState && hazards.length === 0) {
@@ -142,7 +138,7 @@ export default function DepthPage() {
         <div className="kpi-card">
           <span className="kpi-label">Cumulative Footprint</span>
           <div className="kpi-value" style={{ color: 'var(--amber)' }}>
-            {metrics.totalArea > 0 ? `${metrics.totalArea.toFixed(1)} m²` : (metrics.totalAreaPx > 0 ? `${metrics.totalAreaPx.toFixed(0)} px²` : '—')}
+            {metrics.totalArea > 0 ? `${metrics.totalArea.toFixed(1)} m²` : '0.0 m²'}
           </div>
         </div>
         <div className="kpi-card">
@@ -183,7 +179,7 @@ export default function DepthPage() {
               <tr>
                 <th>Hazard ID</th>
                 <th>Classification</th>
-                <th>Surface Area</th>
+                <th>Surface Area (m²)</th>
                 <th>Depth Index</th>
                 <th>Confidence</th>
                 <th>Depression Profile</th>
@@ -205,8 +201,8 @@ export default function DepthPage() {
                         {item.className.replace(/_/g, ' ').toUpperCase()}
                       </span>
                     </td>
-                    <td style={{ fontFamily: 'var(--font-mono)' }}>
-                      {item.area != null ? `${item.area.toFixed(1)} m²` : (item.areaPx != null ? `${Number(item.areaPx).toFixed(0)} px²` : '—')}
+                    <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>
+                      {item.areaText}
                     </td>
                     <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 800, color: (item.depthIndex != null && item.depthIndex > 0.7) ? 'var(--danger)' : 'var(--warning)' }}>
                       {item.depthIndex != null ? item.depthIndex.toFixed(3) : '—'}

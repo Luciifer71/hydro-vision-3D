@@ -7,7 +7,7 @@ import {
 import { useStore, CONFIG } from '../store.js';
 import HazardMap from './HazardMap.jsx';
 import HazardModal from './HazardModal.jsx';
-import { computeSessionRisk } from '../lib/derive.js';
+import { computeSessionRisk, formatAreaM2, getNumericAreaM2 } from '../lib/derive.js';
 import ErrorBoundary from './ErrorBoundary.jsx';
 
 ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, ArcElement, BarElement, Title, Tooltip, Legend, Filler);
@@ -192,8 +192,7 @@ export default function AnalyzeView() {
     csvContent += "ID,Type,Latitude,Longitude,Area,Confidence (%),Severity\r\n";
     
     hazards.forEach((h, i) => {
-      const areaM2 = h.area_m2 ?? h.surface_area_m2;
-      const areaVal = areaM2 != null ? `${Number(areaM2).toFixed(2)} m2` : (h.area_px != null ? `${Math.round(h.area_px)} px2` : '—');
+      const areaVal = formatAreaM2(h);
       const sev = h.severity ? h.severity.toUpperCase() : '—';
       const loc = h.location || {};
       const lat = loc.latitude ?? h.latitude ?? 0;
@@ -385,8 +384,7 @@ export default function AnalyzeView() {
                   </tr>
                 ) : (
                   [...hazards].map((h, i) => {
-                    const areaM2 = h.area_m2 ?? h.surface_area_m2;
-                    const areaText = areaM2 != null ? `${Number(areaM2).toFixed(2)} m²` : (h.area_px != null ? `${Math.round(h.area_px)} px²` : '—');
+                    const areaText = formatAreaM2(h);
                     const sev = (h.severity || 'LOW').toLowerCase();
                     const loc = h.location || {};
                     const lat = loc.latitude ?? h.latitude;

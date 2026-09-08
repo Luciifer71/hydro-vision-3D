@@ -274,27 +274,6 @@ export default function Sidebar() {
             </div>
           )}
         </div>
-
-        {/* Status & Municipal Scope Subtext */}
-        <div style={{ 
-          marginTop: 6, 
-          fontSize: '0.62rem', 
-          fontFamily: 'var(--font-mono)', 
-          color: 'var(--text-faint)', 
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          padding: '0 2px',
-          letterSpacing: 0.5 
-        }}>
-          <span>LINK: <strong style={{ color: isConnected ? 'var(--green)' : 'var(--text-muted)' }}>{connectionStatus}</strong></span>
-          <span style={{ 
-            color: isEmployee ? 'var(--cyan)' : 'var(--amber)',
-            fontWeight: 800
-          }}>
-            {isEmployee ? 'FIELD WORKER' : 'ROOT ADMIN'}
-          </span>
-        </div>
       </div>
 
       {/* Navigation List */}

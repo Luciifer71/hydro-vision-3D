@@ -8,7 +8,7 @@ import MissionStatusPanel from './MissionStatusPanel.jsx';
 import VideoExportCard from './VideoExportCard.jsx';
 import ErrorBoundary from './ErrorBoundary.jsx';
 import ConfidenceSlider from './ConfidenceSlider.jsx';
-import { computeSessionRisk } from '../lib/derive.js';
+import { computeSessionRisk, getNumericAreaM2 } from '../lib/derive.js';
 
 export default function FlyView() {
   // 1. Extract telemetry and store state safely
@@ -28,7 +28,7 @@ export default function FlyView() {
   const displayHazards = rawHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
   const activeHazards = displayHazards.length;
   
-  const totalArea = displayHazards.reduce((sum, h) => sum + (Number(h.surface_area_m2 || h.area_m2) || 0), 0);
+  const totalArea = displayHazards.reduce((sum, h) => sum + getNumericAreaM2(h), 0);
   const { riskScore, riskLevel } = computeSessionRisk(displayHazards, currentState.summary || {});
     
   const isCritical = riskLevel === 'CRITICAL';
