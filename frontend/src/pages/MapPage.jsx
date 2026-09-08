@@ -5,8 +5,8 @@ import EmptySessionState from '../components/EmptySessionState.jsx';
 import ErrorBoundary from '../components/ErrorBoundary.jsx';
 
 export default function MapPage() {
-  const { hazards = [], allHazards = [], currentSessionHazards = [], currentState, fetchGeoJsonHazards } = useStore();
-  const activeHazards = allHazards.length > 0 ? allHazards : (currentSessionHazards.length > 0 ? currentSessionHazards : hazards);
+  const { hazards = [], currentSessionHazards = [], currentState, fetchGeoJsonHazards } = useStore();
+  const activeHazards = currentSessionHazards.length > 0 ? currentSessionHazards : hazards;
   const [currentTime, setCurrentTime] = useState('');
 
   // Auto-fetch hazards from backend & Supabase Cloud history on mount
@@ -34,7 +34,7 @@ export default function MapPage() {
   const coverageAreaText = validAreas.length > 0 ? `${totalArea.toFixed(2)} m²` : '—';
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 14, minHeight: '100%' }}>
       {/* KPI Grid */}
       <div className="kpi-grid" style={{ gridTemplateColumns: 'repeat(3,1fr)' }}>
         {[
@@ -50,14 +50,14 @@ export default function MapPage() {
       </div>
 
       {/* GIS Hazard Map Container */}
-      <div className="card" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 350 }}>
+      <div className="card" style={{ display: 'flex', flexDirection: 'column', flex: '1 0 520px', minHeight: 520 }}>
         <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <span className="card-title">GIS Hazard Map — Vadodara</span>
           <span className="card-badge badge-live" style={{ color: '#10b981', fontSize: '0.7rem' }}>● Live Streaming</span>
         </div>
-        <div style={{ flex: 1, position: 'relative', minHeight: 300, width: '100%' }}>
+        <div style={{ flex: 1, position: 'relative', minHeight: 460, width: '100%' }}>
           <ErrorBoundary name="Interactive GIS Map">
-            <HazardMap fullpage />
+            <HazardMap fullpage hazards={activeHazards} />
           </ErrorBoundary>
         </div>
       </div>

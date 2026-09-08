@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Line, Doughnut, Bar } from 'react-chartjs-2';
 import {
   Chart as ChartJS, CategoryScale, LinearScale, PointElement, LineElement,
@@ -6,6 +6,7 @@ import {
 } from 'chart.js';
 import { useStore, CONFIG } from '../store.js';
 import HazardMap from './HazardMap.jsx';
+import HazardModal from './HazardModal.jsx';
 import { computeSessionRisk } from '../lib/derive.js';
 import ErrorBoundary from './ErrorBoundary.jsx';
 
@@ -61,8 +62,39 @@ const CHART_OPTS = {
 };
 
 export default function AnalyzeView() {
-  const { timelineHistory = [], riskHistory = [], currentState, hazards: rawHazards = [], streamRunning, confidenceThreshold = 0.20 } = useStore();
-  const hazards = rawHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
+  const { 
+    timelineHistory = [], 
+    riskHistory = [], 
+    currentState, 
+    hazards: storeHazards = [], 
+    currentSessionHazards = [],
+    fetchGeoJsonHazards,
+    fetchSupabaseHazardsHistory,
+    streamRunning, 
+    confidenceThreshold = 0.20 
+  } = useStore();
+
+  const [selectedHazard, setSelectedHazard] = useState(null);
+
+  // Auto-fetch historical & geojson hazards if store is empty on mount
+  useEffect(() => {
+    const store = useStore.getState();
+    if (store.fetchSupabaseHazardsHistory) {
+      store.fetchSupabaseHazardsHistory();
+    }
+    if (storeHazards.length === 0 && currentSessionHazards.length === 0 && store.fetchGeoJsonHazards) {
+      store.fetchGeoJsonHazards();
+    }
+  }, []);
+
+  const candidateLists = [
+    currentSessionHazards, 
+    storeHazards, 
+    currentState?.hazards,
+    currentState?.summary?.hazards
+  ];
+  const activeHazardsList = candidateLists.find(list => Array.isArray(list) && list.length > 0) || [];
+  const hazards = activeHazardsList.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
 
   // Timeline chart dataset
   const timelineData = {
@@ -325,7 +357,7 @@ export default function AnalyzeView() {
           <div className="bf-badge-title">GIS SPATIAL PROJECTION</div>
           <div style={{ marginTop: 8, borderRadius: 'var(--radius-sm)', overflow: 'hidden' }}>
             <ErrorBoundary name="GIS Map">
-              <HazardMap />
+              <HazardMap hazards={activeHazardsList.length > 0 ? activeHazardsList : hazards} />
             </ErrorBoundary>
           </div>
         </div>
@@ -362,7 +394,14 @@ export default function AnalyzeView() {
                     const formattedType = (h.class_name || h.type || 'unknown').replace('_', ' ').toUpperCase();
 
                     return (
-                      <tr key={`${h.hazard_id || i}-${i}`}>
+                      <tr 
+                        key={`${h.hazard_id || i}-${i}`}
+                        onClick={() => setSelectedHazard(h)}
+                        title="Click to inspect hazard telemetry & evidence"
+                        style={{ cursor: 'pointer', transition: 'background 0.15s ease' }}
+                        onMouseEnter={(e) => e.currentTarget.style.background = 'rgba(255, 187, 0, 0.1)'}
+                        onMouseLeave={(e) => e.currentTarget.style.background = 'transparent'}
+                      >
                         <td style={{ fontFamily: 'var(--font-mono)', fontSize: '0.72rem', color: 'var(--amber)', fontWeight: 700 }}>
                           {h.hazard_id || `HAZ-${i}`}
                         </td>
@@ -404,6 +443,13 @@ export default function AnalyzeView() {
           </ErrorBoundary>
         </div>
       </div>
+
+      {/* Hazard Inspection Modal */}
+      {selectedHazard && (
+        <ErrorBoundary name="Hazard Modal">
+          <HazardModal hazard={selectedHazard} onClose={() => setSelectedHazard(null)} />
+        </ErrorBoundary>
+      )}
     </div>
   );
 }

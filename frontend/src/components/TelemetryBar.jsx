@@ -15,7 +15,7 @@ function getCardinal(deg) {
 }
 
 export default function TelemetryBar() {
-  const { telemetry, currentState, connectionStatus, feedMode, switchToLiveFeed, hazards } = useStore();
+  const { telemetry, currentState, connectionStatus, feedMode, switchToLiveFeed, hazards, currentPage } = useStore();
   const t = telemetry || {};
   const isConnected = connectionStatus === 'LIVE';
   const isLive = feedMode === 'live' && isConnected && (t.altitude != null || t.satellites != null);
@@ -49,25 +49,27 @@ export default function TelemetryBar() {
           </span>
         </div>
 
-        <button
-          className="btn"
-          onClick={switchToLiveFeed}
-          style={{
-            background: 'linear-gradient(135deg, #10b981, #059669)',
-            color: '#061e14',
-            fontWeight: 800,
-            fontSize: '0.72rem',
-            padding: '4px 12px',
-            borderRadius: 4,
-            boxShadow: '0 0 10px rgba(16, 185, 129, 0.35)',
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6
-          }}
-        >
-          <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#061e14' }} />
-          Switch to Live Telemetry
-        </button>
+        {currentPage === 'dashboard' && (
+          <button
+            className="btn"
+            onClick={switchToLiveFeed}
+            style={{
+              background: 'linear-gradient(135deg, #10b981, #059669)',
+              color: '#061e14',
+              fontWeight: 800,
+              fontSize: '0.72rem',
+              padding: '4px 12px',
+              borderRadius: 4,
+              boxShadow: '0 0 10px rgba(16, 185, 129, 0.35)',
+              display: 'inline-flex',
+              alignItems: 'center',
+              gap: 6
+            }}
+          >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#061e14' }} />
+            Switch to Live Telemetry
+          </button>
+        )}
       </div>
     );
   }

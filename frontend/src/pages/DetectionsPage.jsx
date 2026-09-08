@@ -18,25 +18,49 @@ export default function DetectionsPage() {
   const hazards = rawHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
 
   const [isSyncing, setIsSyncing] = useState(false);
+  const [severityFilter, setSeverityFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ACTIVE'); // 'ACTIVE' or 'ALL'
 
   if (!currentState && hazards.length === 0) {
-    return <EmptySessionState message="No Detections Loaded" />;
+    return <EmptySessionState message="No Detections or Alerts Loaded" />;
   }
+
+  // Active hazards count for KPI metrics
+  const activeHazards = hazards.filter(h => h.status !== 'RESOLVED');
+  const counts = {
+    TOTAL: hazards.length,
+    ACTIVE: activeHazards.length,
+    CRITICAL: activeHazards.filter(h => (h.severity || '').toUpperCase() === 'CRITICAL').length,
+    HIGH: activeHazards.filter(h => (h.severity || '').toUpperCase() === 'HIGH').length,
+    MODERATE: activeHazards.filter(h => (h.severity || '').toUpperCase() === 'MODERATE').length,
+  };
 
   // 1. Filter Logic
   const filtered = hazards.filter(h => {
+    // Status filter
+    if (statusFilter === 'ACTIVE' && h.status === 'RESOLVED') {
+      return false;
+    }
+
+    // Severity filter
+    if (severityFilter !== 'ALL') {
+      if ((h.severity || 'LOW').toUpperCase() !== severityFilter) return false;
+    }
+
+    // Type filter
     const hazardType = (h.class_name || h.type || '').toLowerCase();
     const filter = (detectionTypeFilter || 'all').toLowerCase();
 
     let matchType = false;
     if (filter === 'all') {
       matchType = true;
-    } else if (filter === 'pothole') {
+    } else if (filter === 'potholes' || filter === 'pothole') {
       matchType = hazardType.includes('pothole');
     } else {
       matchType = hazardType === filter || hazardType.replace('-', '_') === filter.replace('-', '_');
     }
 
+    // Free text search
     const q = (detectionSearch || '').toLowerCase();
     const typeLabel = (CONFIG.TYPE_LABELS[h.type] || CONFIG.TYPE_LABELS[h.class_name] || h.type || '').toLowerCase();
     
@@ -78,6 +102,80 @@ export default function DetectionsPage() {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14, height: '100%' }}>
+      {/* Alert KPI Summary Cards (Interactive quick-filters) */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 12, flexShrink: 0 }}>
+        <div 
+          className="kpi-card" 
+          onClick={() => setSeverityFilter(severityFilter === 'CRITICAL' ? 'ALL' : 'CRITICAL')}
+          style={{ 
+            borderTopColor: 'var(--danger)', 
+            cursor: 'pointer',
+            background: severityFilter === 'CRITICAL' ? 'rgba(239, 68, 68, 0.12)' : undefined,
+            border: severityFilter === 'CRITICAL' ? '1px solid var(--danger)' : undefined,
+            transition: 'all 0.15s ease'
+          }}
+          title="Click to filter by Critical Threats"
+        >
+          <span className="kpi-label">CRITICAL THREATS</span>
+          <div className="kpi-value" style={{ color: 'var(--danger)' }}>{counts.CRITICAL}</div>
+          <span className="kpi-trend up">Immediate response required</span>
+        </div>
+
+        <div 
+          className="kpi-card" 
+          onClick={() => setSeverityFilter(severityFilter === 'HIGH' ? 'ALL' : 'HIGH')}
+          style={{ 
+            borderTopColor: 'var(--orange)', 
+            cursor: 'pointer',
+            background: severityFilter === 'HIGH' ? 'rgba(249, 115, 22, 0.12)' : undefined,
+            border: severityFilter === 'HIGH' ? '1px solid var(--orange)' : undefined,
+            transition: 'all 0.15s ease'
+          }}
+          title="Click to filter by High Severity"
+        >
+          <span className="kpi-label">HIGH SEVERITY</span>
+          <div className="kpi-value" style={{ color: 'var(--orange)' }}>{counts.HIGH}</div>
+          <span className="kpi-trend">Contractor crew dispatch</span>
+        </div>
+
+        <div 
+          className="kpi-card" 
+          onClick={() => setSeverityFilter(severityFilter === 'MODERATE' ? 'ALL' : 'MODERATE')}
+          style={{ 
+            borderTopColor: 'var(--warning)', 
+            cursor: 'pointer',
+            background: severityFilter === 'MODERATE' ? 'rgba(245, 158, 11, 0.12)' : undefined,
+            border: severityFilter === 'MODERATE' ? '1px solid var(--warning)' : undefined,
+            transition: 'all 0.15s ease'
+          }}
+          title="Click to filter by Moderate Hazards"
+        >
+          <span className="kpi-label">MODERATE HAZARDS</span>
+          <div className="kpi-value" style={{ color: 'var(--warning)' }}>{counts.MODERATE}</div>
+          <span className="kpi-trend">Scheduled maintenance</span>
+        </div>
+
+        <div 
+          className="kpi-card" 
+          onClick={() => { setSeverityFilter('ALL'); setStatusFilter('ALL'); }}
+          style={{ 
+            borderTopColor: 'var(--amber)', 
+            cursor: 'pointer',
+            background: severityFilter === 'ALL' && statusFilter === 'ALL' ? 'rgba(255, 184, 0, 0.12)' : undefined,
+            border: severityFilter === 'ALL' && statusFilter === 'ALL' ? '1px solid var(--amber)' : undefined,
+            transition: 'all 0.15s ease'
+          }}
+          title="Click to view all detections"
+        >
+          <span className="kpi-label">ACTIVE / TOTAL</span>
+          <div className="kpi-value" style={{ color: 'var(--text-primary)' }}>
+            {counts.ACTIVE} <span style={{ fontSize: '0.9rem', color: 'var(--text-muted)' }}>/ {counts.TOTAL}</span>
+          </div>
+          <span className="kpi-trend">Tracked telemetry hazards</span>
+        </div>
+      </div>
+
+      {/* Main Table Fieldset */}
       <div className="bf-fieldset" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
         {/* Betaflight Embedded Pill Badge */}
         <div className="bf-badge-title">
@@ -88,26 +186,26 @@ export default function DetectionsPage() {
             <line x1="12" y1="6" x2="12" y2="2" />
             <line x1="12" y1="22" x2="12" y2="18" />
           </svg>
-          HAZARD INVENTORY ({filtered.length} RECORDS)
+          HAZARD INVENTORY & ALERTS ({filtered.length} MATCHING)
         </div>
 
         {/* Filter Controls & Cloud Sync Action */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, marginTop: 8, marginBottom: 12 }}>
-          <div style={{ display: 'flex', gap: 10, flex: 1 }}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: 10, marginTop: 8, marginBottom: 12 }}>
+          <div style={{ display: 'flex', gap: 8, flex: 1, minWidth: 320 }}>
             <input
               className="form-input"
-              placeholder="Search by ID, class type, municipal zone..."
+              placeholder="Search by ID, classification, zone..."
               value={detectionSearch || ''}
               onChange={e => setDetectionSearch(e.target.value)}
               style={{ flex: 1 }}
             />
             <select 
               className="form-select" 
-              style={{ width: 220 }} 
+              style={{ width: 190 }} 
               value={detectionTypeFilter || 'all'} 
               onChange={e => setDetectionTypeFilter(e.target.value)}
             >
-              <option value="all">All Classifications</option>
+              <option value="all">All Types</option>
               <option value="potholes">Potholes</option>
               <option value="damaged_footpath">Damaged Footpath</option>
               <option value="drainage_overflow">Drainage Overflow</option>
@@ -116,22 +214,52 @@ export default function DetectionsPage() {
             </select>
           </div>
 
-          <button 
-            onClick={handleSupabaseSync}
-            disabled={isSyncing || hazards.length === 0}
-            className="btn btn-primary"
-            style={{ 
-              fontSize: '0.75rem', 
-              padding: '7px 14px',
-              whiteSpace: 'nowrap',
-              cursor: isSyncing ? 'wait' : 'pointer'
-            }}
-          >
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-              <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
-            </svg>
-            {isSyncing ? 'Syncing...' : 'Sync to Supabase Cloud'}
-          </button>
+          {/* Severity & Status Quick Filters */}
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 4, background: 'rgba(255,255,255,0.03)', padding: 2, borderRadius: 'var(--radius-xs)', border: '1px solid var(--border-subtle)' }}>
+              {['ALL', 'CRITICAL', 'HIGH', 'MODERATE'].map(f => (
+                <button 
+                  key={f} 
+                  onClick={() => setSeverityFilter(f)}
+                  className={`filter-btn ${severityFilter === f ? 'active' : ''}`}
+                  style={{ 
+                    fontSize: '0.70rem', 
+                    padding: '3px 8px',
+                    color: severityFilter === f ? '#0b0e14' : f === 'CRITICAL' ? 'var(--danger)' : f === 'HIGH' ? 'var(--orange)' : f === 'MODERATE' ? 'var(--warning)' : undefined
+                  }}
+                >
+                  {f}
+                </button>
+              ))}
+            </div>
+
+            <select
+              className="form-select"
+              style={{ width: 120, fontSize: '0.72rem', padding: '5px 8px' }}
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+            >
+              <option value="ACTIVE">Active Only</option>
+              <option value="ALL">All (Inc. Resolved)</option>
+            </select>
+
+            <button 
+              onClick={handleSupabaseSync}
+              disabled={isSyncing || hazards.length === 0}
+              className="btn btn-primary"
+              style={{ 
+                fontSize: '0.72rem', 
+                padding: '5px 12px',
+                whiteSpace: 'nowrap',
+                cursor: isSyncing ? 'wait' : 'pointer'
+              }}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                <path d="M18 10h-1.26A8 8 0 1 0 9 20h9a5 5 0 0 0 0-10z" />
+              </svg>
+              {isSyncing ? 'Syncing...' : 'Sync Cloud'}
+            </button>
+          </div>
         </div>
 
         {/* Live Table Area */}

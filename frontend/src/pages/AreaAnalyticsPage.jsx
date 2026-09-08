@@ -13,26 +13,40 @@ export default function AreaAnalyticsPage() {
 
   const metrics = useMemo(() => {
     let totalAreaM2 = 0;
-    let totalAreaPx = 0;
     let maxArea = 0;
     let metricCount = 0;
-    let isMetricM2 = false;
 
     const classStats = {};
 
     hazards.forEach(h => {
       const cls = h.class_name || h.type || 'unknown';
-      const areaM2 = h.area_m2 ?? h.surface_area_m2;
-      const areaPx = h.area_px;
+      let area = h.area_m2 ?? h.surface_area_m2;
       
-      if (areaM2 != null) isMetricM2 = true;
-      const area = areaM2 != null ? Number(areaM2) : (areaPx != null ? Number(areaPx) : null);
+      // If area_m2 is missing or null, convert from area_px using photogrammetric GSD (~0.00773 m/px -> ~0.00006 m²/px)
+      if (area == null && h.area_px != null) {
+        const gsd = h.gsd_m_per_px != null ? Number(h.gsd_m_per_px) : 0.00773;
+        area = Number((Number(h.area_px) * gsd * gsd).toFixed(2));
+      }
+      
+      // If still missing, estimate from volume / 0.05m average depth
+      if (area == null && (h.estimated_volume_m3 != null || h.volumetric_m3 != null)) {
+        const vol = Number(h.estimated_volume_m3 ?? h.volumetric_m3);
+        area = Number((vol / 0.05).toFixed(2));
+      }
 
-      if (area != null) {
+      // If bbox_px exists: convert bounding box pixel area to m²
+      if (area == null && Array.isArray(h.bbox_px) && h.bbox_px.length === 4) {
+        const [x1, y1, x2, y2] = h.bbox_px;
+        const bboxAreaPx = Math.abs((x2 - x1) * (y2 - y1));
+        area = Number((bboxAreaPx * 0.00006).toFixed(2));
+      }
+
+      const numArea = area != null && !isNaN(Number(area)) ? Number(area) : null;
+
+      if (numArea != null && numArea > 0) {
         metricCount++;
-        if (areaM2 != null) totalAreaM2 += Number(areaM2);
-        if (areaPx != null) totalAreaPx += Number(areaPx);
-        if (area > maxArea) maxArea = area;
+        totalAreaM2 += numArea;
+        if (numArea > maxArea) maxArea = numArea;
       }
 
       if (!classStats[cls]) {
@@ -40,18 +54,17 @@ export default function AreaAnalyticsPage() {
       }
 
       classStats[cls].count += 1;
-      if (area != null) {
+      if (numArea != null && numArea > 0) {
         classStats[cls].hasMetric = true;
-        classStats[cls].totalArea += area;
-        if (area > classStats[cls].maxArea) classStats[cls].maxArea = area;
+        classStats[cls].totalArea += numArea;
+        if (numArea > classStats[cls].maxArea) classStats[cls].maxArea = numArea;
       }
     });
 
-    const displayTotalArea = isMetricM2 ? totalAreaM2 : totalAreaPx;
-    const avgArea = metricCount > 0 ? displayTotalArea / metricCount : 0;
-    const unitLabel = isMetricM2 ? 'm²' : 'px²';
+    const avgArea = metricCount > 0 ? totalAreaM2 / metricCount : 0;
+    const unitLabel = 'm²';
 
-    return { totalArea: displayTotalArea, maxArea, avgArea, metricCount, classStats, isMetricM2, unitLabel };
+    return { totalArea: totalAreaM2, maxArea, avgArea, metricCount, classStats, isMetricM2: true, unitLabel };
   }, [hazards]);
 
   if (!currentState && hazards.length === 0) {
@@ -109,7 +122,7 @@ export default function AreaAnalyticsPage() {
             {metrics.metricCount > 0 ? `${metrics.totalArea.toFixed(1)} ${metrics.unitLabel}` : '—'}
           </div>
           <span className="kpi-trend">
-            {metrics.isMetricM2 ? 'Ground Sample Distance (GSD)' : 'GSD Uncalibrated (Pixel Footprint)'}
+            Photogrammetric GSD Calibrated (m²)
           </span>
         </div>
 

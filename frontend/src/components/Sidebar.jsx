@@ -90,9 +90,8 @@ const NavIcon = ({ type }) => {
 const NAV = [
   { id: 'dashboard', label: 'Dashboard', icon: 'setup' },
   { id: 'stream', label: 'Stream Control', icon: 'stream' },
-  { section: 'Detection' },
-  { id: 'detections', label: 'Detections', icon: 'detection', badge: 'detection' },
-  { id: 'alerts', label: 'Alerts', icon: 'alert', badge: 'alert' },
+  { section: 'Detection & Alerts' },
+  { id: 'detections', label: 'Detections & Alerts', icon: 'detection', badge: 'detection' },
   { section: 'Analysis' },
   { id: 'risk', label: 'Risk Engine', icon: 'risk' },
   { id: 'volumetric', label: 'Area Analytics', icon: 'volumetric' },
