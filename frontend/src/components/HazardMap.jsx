@@ -44,7 +44,7 @@ const TILE_LAYERS = {
   },
 };
 
-export default function HazardMap({ fullpage = false }) {
+export default function HazardMap({ fullpage = false, hazards: propHazards = null }) {
   const mapRef = useRef(null);
   const mapInstanceRef = useRef(null);
   const tileLayerRef = useRef(null);
@@ -52,8 +52,14 @@ export default function HazardMap({ fullpage = false }) {
   const droneMarkerRef = useRef(null);
   const trajectoryRef = useRef(null);
   const [selectedHazard, setSelectedHazard] = useState(null);
+  const [mapReady, setMapReady] = useState(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [showSearchDropdown, setShowSearchDropdown] = useState(false);
+
+  // Prevent automatic zoom resets when the user manually zooms or pans
+  const userInteractedRef = useRef(false);
+  const initialFitDoneRef = useRef(false);
+  const pointsRef = useRef([]);
 
   const [activeLayer, setActiveLayer] = useState('google-hybrid');
   const { 
@@ -63,12 +69,20 @@ export default function HazardMap({ fullpage = false }) {
     telemetry = {}, 
     trajectory = [], 
     currentPage, 
+    viewMode,
     connectionStatus, 
     feedMode,
     confidenceThreshold = 0.20
   } = useStore();
-  const rawHazards = allHazards.length > 0 ? allHazards : (currentSessionHazards.length > 0 ? currentSessionHazards : hazards);
-  const activeHazards = rawHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
+
+  const targetHazards = (propHazards !== null && propHazards !== undefined)
+    ? propHazards
+    : (currentSessionHazards.length > 0 ? currentSessionHazards : hazards);
+
+  const activeHazards = useMemo(() => {
+    return targetHazards.filter(h => (h.confidence ?? h.conf ?? 1) >= confidenceThreshold);
+  }, [targetHazards, confidenceThreshold]);
+
   const isLiveHardware = feedMode === 'live' && connectionStatus === 'LIVE' && telemetry?.latitude != null && telemetry?.longitude != null;
 
   // Filtered search results matching Ticket ID, Class Name, or Track ID
@@ -88,30 +102,59 @@ export default function HazardMap({ fullpage = false }) {
     setSearchQuery(hazard.hazard_id || '');
     const coords = extractCoords(hazard);
     if (coords && mapInstanceRef.current) {
+      userInteractedRef.current = true;
       mapInstanceRef.current.flyTo([coords.lat, coords.lon], 18, { duration: 1.2 });
+      const hid = String(hazard.hazard_id || hazard.ticket_id || (hazard.track_id != null ? `track-${hazard.track_id}` : ''));
+      const marker = markersRef.current.get(hid);
+      if (marker) {
+        setTimeout(() => marker.openPopup(), 1250);
+      }
     }
   };
 
   // Helper to extract coordinates safely from various backend payload structures
   const extractCoords = (h) => {
-    let lat = Number(h.latitude ?? h.lat ?? h.location?.latitude);
-    let lon = Number(h.longitude ?? h.lng ?? h.location?.longitude);
+    if (!h) return null;
+    let lat = Number(
+      h.latitude ?? 
+      h.lat ?? 
+      h.location?.latitude ?? 
+      h.location?.lat ?? 
+      h.wgs84_coords?.latitude ?? 
+      h.wgs84_coords?.lat
+    );
+    let lon = Number(
+      h.longitude ?? 
+      h.lng ?? 
+      h.lon ?? 
+      h.location?.longitude ?? 
+      h.location?.lng ?? 
+      h.location?.lon ?? 
+      h.wgs84_coords?.longitude ?? 
+      h.wgs84_coords?.lon
+    );
 
-    if (isNaN(lat) || isNaN(lon) || (lat === 0 && lon === 0)) {
+    const baseLat = CONFIG.CENTER_LAT || 22.3072;
+    const baseLon = CONFIG.CENTER_LON || 73.1812;
+
+    // Detect missing, invalid, or default shared base coordinates
+    const isDefaultOrMissing = 
+      isNaN(lat) || isNaN(lon) || 
+      (lat === 0 && lon === 0) ||
+      (Math.abs(lat - baseLat) < 0.00008 && Math.abs(lon - baseLon) < 0.00008);
+
+    if (isDefaultOrMissing) {
       const idStr = String(h.hazard_id || h.ticket_id || h.id || h.track_id || Math.random());
       let hash = 0;
       for (let i = 0; i < idStr.length; i++) {
         hash = ((hash << 5) - hash) + idStr.charCodeAt(i);
         hash |= 0;
       }
-      const latOffset = (((Math.abs(hash) % 1000) / 1000) - 0.5) * 0.024;
-      const lonOffset = ((((Math.abs(hash >> 3)) % 1000) / 1000) - 0.5) * 0.024;
-
-      const baseLat = CONFIG.CENTER_LAT || 22.3072;
-      const baseLon = CONFIG.CENTER_LON || 73.1812;
-
-      lat = baseLat + latOffset;
-      lon = baseLon + lonOffset;
+      // Disperse deterministically in inspection corridor in Vadodara (~180m to 850m radius)
+      const angle = (Math.abs(hash) % 360) * (Math.PI / 180);
+      const radiusDeg = 0.0016 + ((Math.abs(hash >> 3) % 1000) / 1000) * 0.0068;
+      lat = baseLat + radiusDeg * Math.sin(angle);
+      lon = baseLon + (radiusDeg * 1.08) * Math.cos(angle);
     }
     return { lat, lon };
   };
@@ -127,6 +170,11 @@ export default function HazardMap({ fullpage = false }) {
       attributionControl: false,
     });
 
+    // Track user zooming and dragging so we don't automatically reset their zoom
+    map.on('zoomstart dragstart movestart', () => {
+      userInteractedRef.current = true;
+    });
+
     const layerConfig = TILE_LAYERS[activeLayer];
     const tileLayer = L.tileLayer(layerConfig.url, {
       subdomains: layerConfig.subdomains,
@@ -135,28 +183,67 @@ export default function HazardMap({ fullpage = false }) {
     tileLayerRef.current = tileLayer;
 
     mapInstanceRef.current = map;
-    setTimeout(() => map.invalidateSize(), 100);
-    setTimeout(() => map.invalidateSize(), 400);
+    setMapReady(map);
+    setTimeout(() => map.invalidateSize(), 50);
+    setTimeout(() => map.invalidateSize(), 200);
+    setTimeout(() => map.invalidateSize(), 500);
 
     return () => {
+      markersRef.current.forEach((m) => {
+        try { map.removeLayer(m); } catch (e) {}
+      });
+      markersRef.current.clear();
+      if (droneMarkerRef.current) {
+        try { map.removeLayer(droneMarkerRef.current); } catch (e) {}
+        droneMarkerRef.current = null;
+      }
+      if (trajectoryRef.current) {
+        try { map.removeLayer(trajectoryRef.current); } catch (e) {}
+        trajectoryRef.current = null;
+      }
       map.remove();
       mapInstanceRef.current = null;
+      setMapReady(null);
     };
   }, []);
 
-  // Fix Leaflet container sizing when switching tabs in Single Page App
+  // Fix Leaflet container sizing when switching tabs or view modes in Single Page App
   useEffect(() => {
     const map = mapInstanceRef.current;
     if (!map) return;
 
+    const performSizingAndFit = () => {
+      if (!mapInstanceRef.current) return;
+      mapInstanceRef.current.invalidateSize();
+
+      // If initial fit hasn't succeeded yet and user hasn't zoomed/panned manually
+      if (!initialFitDoneRef.current && !userInteractedRef.current && pointsRef.current && pointsRef.current.length > 0) {
+        const size = mapInstanceRef.current.getSize();
+        if (size.x > 80 && size.y > 80) {
+          const pts = pointsRef.current;
+          const baseLat = CONFIG.CENTER_LAT || 22.3072;
+          const baseLon = CONFIG.CENTER_LON || 73.1812;
+          const localPts = pts.filter(([lat, lon]) => Math.abs(lat - baseLat) < 0.025 && Math.abs(lon - baseLon) < 0.025);
+          const targets = localPts.length > 0 ? localPts : pts;
+          if (targets.length > 1) {
+            mapInstanceRef.current.fitBounds(targets, { padding: [35, 35], maxZoom: 17 });
+          } else if (targets.length === 1) {
+            mapInstanceRef.current.setView(targets[0], 16);
+          }
+          initialFitDoneRef.current = true;
+        }
+      }
+    };
+
     const timers = [
-      setTimeout(() => map.invalidateSize(), 50),
-      setTimeout(() => map.invalidateSize(), 200),
-      setTimeout(() => map.invalidateSize(), 500),
+      setTimeout(performSizingAndFit, 60),
+      setTimeout(performSizingAndFit, 150),
+      setTimeout(performSizingAndFit, 350),
+      setTimeout(performSizingAndFit, 650),
     ];
 
     return () => timers.forEach(t => clearTimeout(t));
-  }, [currentPage]);
+  }, [currentPage, viewMode]);
 
   // ResizeObserver guarantees Leaflet re-calculates viewport size when container becomes visible
   useEffect(() => {
@@ -172,7 +259,7 @@ export default function HazardMap({ fullpage = false }) {
 
   // Update Tile Layer on style switch
   useEffect(() => {
-    const map = mapInstanceRef.current;
+    const map = mapReady || mapInstanceRef.current;
     if (!map) return;
 
     if (tileLayerRef.current) {
@@ -183,11 +270,11 @@ export default function HazardMap({ fullpage = false }) {
       subdomains: layerConfig.subdomains,
       maxZoom: layerConfig.maxZoom,
     }).addTo(map);
-  }, [activeLayer]);
+  }, [mapReady, activeLayer]);
 
   // Update Hazard Markers in Real-Time & Auto-Fit
   useEffect(() => {
-    const map = mapInstanceRef.current;
+    const map = mapReady || mapInstanceRef.current;
     if (!map) return;
     const markers = markersRef.current;
 
@@ -199,30 +286,92 @@ export default function HazardMap({ fullpage = false }) {
       if (!coords) return;
       points.push([coords.lat, coords.lon]);
 
-      const hazardId = (h.track_id != null && h.track_id !== '') ? String(h.track_id) : (h.hazard_id || `HAZ-${index}`);
+      const hazardId = String(h.hazard_id || h.ticket_id || (h.track_id != null ? `track-${h.track_id}` : `haz-${index}`));
       currentIds.add(hazardId);
 
       const className = h.class_name || h.type || 'unknown';
       const color = CONFIG.TYPE_COLORS?.[className] || CONFIG.TYPE_COLORS?.[h.type] || '#10b981';
-      const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : null;
-      
-      const radius = area != null ? Math.max(7, Math.min(18, area * 5)) : 7;
+      const sev = (h.severity || 'LOW').toUpperCase();
+      const area = h.surface_area_m2 != null ? Number(h.surface_area_m2) : (h.area_m2 != null ? Number(h.area_m2) : null);
+
+      const sevColors = {
+        CRITICAL: '#ef4444',
+        HIGH: '#f97316',
+        MODERATE: '#ffb800',
+        LOW: '#10b981',
+      };
+      const badgeColor = sevColors[sev] || color;
+
+      const GLYPHS = {
+        open_manhole: '⭕',
+        potholes: '⚠️',
+        waterlogging_area: '💧',
+        drainage_overflow: '🌊',
+        damaged_footpath: '🚧',
+      };
+      const glyph = GLYPHS[className] || '⚠️';
+      const shortId = hazardId.length > 10 ? hazardId.slice(0, 10) : hazardId;
+
+      const customIcon = L.divIcon({
+        className: 'custom-hazard-leaflet-icon',
+        html: `
+          <div class="hazard-pin-container" title="${hazardId} — ${className} (${sev})">
+            <div class="hazard-pin-pulse" style="background-color: ${badgeColor};"></div>
+            <div class="hazard-pin-core" style="background-color: ${badgeColor};">
+              <span>${glyph}</span>
+            </div>
+            <div class="hazard-pin-label">${shortId}</div>
+          </div>
+        `,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -20],
+      });
+
+      const popupHtml = `
+        <div style="font-family:'Segoe UI',system-ui,sans-serif;min-width:190px;padding:2px 0;color:#0f172a;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px;">
+            <span style="font-family:monospace;font-size:11px;font-weight:800;color:#d97706;">${hazardId}</span>
+            <span style="font-size:10px;font-weight:800;padding:2px 6px;border-radius:4px;background:#f1f5f9;color:#334155;">${sev}</span>
+          </div>
+          <div style="font-size:13px;font-weight:800;text-transform:capitalize;margin-bottom:6px;color:#0f172a;">
+            ${(h.class_name || h.type || 'Hazard').replace(/_/g, ' ')}
+          </div>
+          <div style="font-size:11px;color:#64748b;margin-bottom:8px;">
+            Area: <b>${area != null ? Number(area).toFixed(2) + ' m²' : '—'}</b> | Conf: <b>${h.confidence != null ? Math.round(h.confidence * 100) + '%' : '—'}</b>
+          </div>
+          <button id="inspect-btn-${hazardId.replace(/[^a-zA-Z0-9_-]/g, '_')}" style="
+            width:100%;padding:6px 8px;background:#0f172a;color:#ffb800;
+            border:1px solid #ffb800;border-radius:5px;font-size:11px;font-weight:700;
+            cursor:pointer;
+          ">Inspect Details 🔍</button>
+        </div>
+      `;
+
       if (markers.has(hazardId)) {
         const m = markers.get(hazardId);
         m.setLatLng([coords.lat, coords.lon]);
-        m.off('click');
-        m.on('click', () => setSelectedHazard(h));
-        m.setStyle({ color: '#ffffff', fillColor: color, radius: radius });
+        m.setIcon(customIcon);
+        m.setPopupContent(popupHtml);
+        if (!map.hasLayer(m)) {
+          m.addTo(map);
+        }
       } else {
-        const m = L.circleMarker([coords.lat, coords.lon], {
-          radius: radius,
-          fillColor: color,
-          fillOpacity: 0.85,
-          color: '#ffffff',
-          weight: 2.5,
-          opacity: 1,
+        const m = L.marker([coords.lat, coords.lon], {
+          icon: customIcon,
+          riseOnHover: true,
+          zIndexOffset: sev === 'CRITICAL' ? 500 : (sev === 'HIGH' ? 300 : 100),
         }).addTo(map);
-        m.on('click', () => setSelectedHazard(h));
+
+        m.bindPopup(popupHtml, { maxWidth: 260 });
+        m.on('popupopen', () => {
+          const btnId = `inspect-btn-${hazardId.replace(/[^a-zA-Z0-9_-]/g, '_')}`;
+          const btn = document.getElementById(btnId);
+          if (btn) {
+            btn.onclick = () => setSelectedHazard(h);
+          }
+        });
+
         markers.set(hazardId, m);
       }
     });
@@ -235,19 +384,31 @@ export default function HazardMap({ fullpage = false }) {
       }
     }
 
-    // Auto-center bounds if points exist
-    if (points.length > 0) {
-      if (points.length === 1) {
-        map.setView(points[0], 17);
-      } else {
-        map.fitBounds(points, { padding: [30, 30], maxZoom: 18 });
+    // Save points for container-ready auto-fitting
+    pointsRef.current = points;
+
+    // Auto-center bounds ONLY on initial load when points first arrive and container size is valid
+    const baseLat = CONFIG.CENTER_LAT || 22.3072;
+    const baseLon = CONFIG.CENTER_LON || 73.1812;
+    const localPts = points.filter(([lat, lon]) => Math.abs(lat - baseLat) < 0.025 && Math.abs(lon - baseLon) < 0.025);
+    const fitTargets = localPts.length > 0 ? localPts : points;
+
+    if (fitTargets.length > 0 && !userInteractedRef.current && !initialFitDoneRef.current) {
+      const size = map.getSize();
+      if (size.x > 80 && size.y > 80) {
+        if (fitTargets.length === 1) {
+          map.setView(fitTargets[0], 16);
+        } else {
+          map.fitBounds(fitTargets, { padding: [35, 35], maxZoom: 17 });
+        }
+        initialFitDoneRef.current = true;
       }
     }
-  }, [activeHazards]);
+  }, [mapReady, activeHazards]);
 
   // Live Drone Position Marker (Live Hardware Only)
   useEffect(() => {
-    const map = mapInstanceRef.current;
+    const map = mapReady || mapInstanceRef.current;
     if (!map) return;
 
     if (!isLiveHardware || !telemetry.latitude || !telemetry.longitude) {
@@ -298,11 +459,11 @@ export default function HazardMap({ fullpage = false }) {
         </div>
       `);
     }
-  }, [isLiveHardware, telemetry.latitude, telemetry.longitude, telemetry.heading, telemetry.altitude, telemetry.speed]);
+  }, [mapReady, isLiveHardware, telemetry.latitude, telemetry.longitude, telemetry.heading, telemetry.altitude, telemetry.speed]);
 
   // Live Drone Flight Trajectory
   useEffect(() => {
-    const map = mapInstanceRef.current;
+    const map = mapReady || mapInstanceRef.current;
     if (!map) return;
 
     if (!isLiveHardware || !trajectory || trajectory.length === 0) {
@@ -324,10 +485,11 @@ export default function HazardMap({ fullpage = false }) {
     } else {
       trajectoryRef.current.setLatLngs(trajectory);
     }
-  }, [trajectory]);
+  }, [mapReady, trajectory, isLiveHardware]);
 
   // Recenter / Fit All Hazards
   const handleRecenter = () => {
+    userInteractedRef.current = false;
     const map = mapInstanceRef.current;
     if (!map) return;
 
@@ -340,25 +502,36 @@ export default function HazardMap({ fullpage = false }) {
       if (coords) points.push([coords.lat, coords.lon]);
     });
 
-    if (points.length > 1) {
-      map.fitBounds(points, { padding: [40, 40], maxZoom: 18 });
-    } else if (points.length === 1) {
-      map.setView(points[0], 18);
+    const baseLat = CONFIG.CENTER_LAT || 22.3072;
+    const baseLon = CONFIG.CENTER_LON || 73.1812;
+    const localPts = points.filter(([lat, lon]) => Math.abs(lat - baseLat) < 0.025 && Math.abs(lon - baseLon) < 0.025);
+    const targets = localPts.length > 0 ? localPts : points;
+
+    if (targets.length > 1) {
+      map.fitBounds(targets, { padding: [40, 40], maxZoom: 17 });
+    } else if (targets.length === 1) {
+      map.setView(targets[0], 17);
     } else {
-      map.setView([CONFIG.CENTER_LAT || 22.3072, CONFIG.CENTER_LON || 73.1812], 17);
+      map.setView([baseLat, baseLon], 16);
     }
   };
 
-  const handleZoomIn = () => mapInstanceRef.current?.zoomIn();
-  const handleZoomOut = () => mapInstanceRef.current?.zoomOut();
+  const handleZoomIn = () => {
+    userInteractedRef.current = true;
+    mapInstanceRef.current?.zoomIn();
+  };
+  const handleZoomOut = () => {
+    userInteractedRef.current = true;
+    mapInstanceRef.current?.zoomOut();
+  };
 
   return (
     <div
       style={{
         position: 'relative',
         width: '100%',
-        height: fullpage ? '520px' : '380px',
-        minHeight: fullpage ? '520px' : '380px',
+        height: fullpage ? '100%' : '380px',
+        minHeight: fullpage ? '460px' : '380px',
         borderRadius: '0 0 8px 8px',
         overflow: 'hidden',
       }}
@@ -525,36 +698,11 @@ export default function HazardMap({ fullpage = false }) {
         ))}
       </div>
 
-      {/* RECORDED VIDEO Badge */}
-      {connectionStatus !== 'LIVE' && (
-        <div style={{
-          position: 'absolute',
-          top: 10,
-          left: '50%',
-          transform: 'translateX(-50%)',
-          zIndex: 1000,
-          background: 'rgba(255, 187, 0, 0.2)',
-          border: '1px solid var(--amber)',
-          color: 'var(--amber)',
-          padding: '4px 10px',
-          borderRadius: 4,
-          fontSize: '0.75rem',
-          fontWeight: 800,
-          boxShadow: '0 2px 8px rgba(0,0,0,0.5)',
-          display: 'flex',
-          alignItems: 'center',
-          gap: 6
-        }}>
-          <span>MODE</span>
-          <span style={{ color: '#ffffff', fontWeight: 900 }}>RECORDED VIDEO</span>
-        </div>
-      )}
-
       {/* Map Navigation & Recenter Controls Overlay */}
       <div
         style={{
           position: 'absolute',
-          bottom: 20,
+          top: 54,
           right: 10,
           zIndex: 1000,
           display: 'flex',

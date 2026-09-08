@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { useStore, CONFIG } from '../store.js';
 
 export default function HazardModal({ hazard, onClose }) {
@@ -17,6 +18,15 @@ export default function HazardModal({ hazard, onClose }) {
       setImgError(false);
     }
   }, [hazard]);
+
+  // Press ESC to close modal
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose?.();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
 
   if (!hazard) return null;
 
@@ -38,18 +48,18 @@ export default function HazardModal({ hazard, onClose }) {
   const severity = hazard.severity ? hazard.severity.toUpperCase() : '—';
   const hazardId = hazard.hazard_id || (hazard.track_id ? `HAZ-${String(hazard.track_id).padStart(4, '0')}` : 'HAZ-0001');
 
-  return (
+  const modalContent = (
     <div 
       style={{
         position: 'fixed',
         top: 0, left: 0, right: 0, bottom: 0,
         background: 'rgba(0, 0, 0, 0.82)',
-        backdropFilter: 'blur(6px)',
+        backdropFilter: 'blur(8px)',
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 99999,
-        padding: '16px'
+        zIndex: 999999,
+        padding: '20px'
       }}
       onClick={onClose}
     >
@@ -265,7 +275,29 @@ export default function HazardModal({ hazard, onClose }) {
           </div>
         </div>
 
+        {/* Bottom Close Action Bar */}
+        <div style={{ padding: '12px 20px', background: '#0b0f19', borderTop: '1px solid rgba(255,255,255,0.08)', display: 'flex', justifyContent: 'flex-end', gap: '10px' }}>
+          <button 
+            type="button"
+            onClick={onClose}
+            style={{
+              padding: '6px 16px',
+              background: 'rgba(255, 187, 0, 0.15)',
+              border: '1px solid #ffb800',
+              color: '#ffb800',
+              borderRadius: '6px',
+              fontSize: '0.78rem',
+              fontWeight: 800,
+              cursor: 'pointer'
+            }}
+          >
+            Close Inspector (ESC)
+          </button>
+        </div>
+
       </div>
     </div>
   );
+
+  return typeof document !== 'undefined' ? createPortal(modalContent, document.body) : modalContent;
 }

@@ -1172,17 +1172,22 @@ def generate_mjpeg_stream():
                             class_name = yolo_model.names[cls_id]
                             conf = float(box.conf[0])
 
-<<<<<<< HEAD
+
                             # Per-class threshold scaled by the live gate.
                             _base = class_conf.get(class_name, DEFAULT_CLASS_CONF)
                             _thr = min(0.95, max(0.05,
                                        _base * (LIVE_SENSITIVITY / SENSITIVITY_BASELINE)))
+                            # Per-class threshold scaled by the live gate.
+                            _base = class_conf.get(class_name, DEFAULT_CLASS_CONF)
+                            _thr = min(
+                                0.95,
+                                max(0.05, _base * (LIVE_SENSITIVITY / SENSITIVITY_BASELINE))
+                            )
+
+                            # AI Sensitivity Gate: filter against dynamic threshold.
                             if conf < _thr:
-=======
-                            # AI Sensitivity Gate: filter against dynamic conf_floor
-                            if conf < class_conf.get(class_name, DEFAULT_CLASS_CONF):
->>>>>>> be2bbc3 (My changes)
                                 continue
+
 
                             coords = box.xyxy[0].cpu().numpy().astype(int).tolist()
                             x1, y1, x2, y2 = coords
