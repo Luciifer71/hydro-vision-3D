@@ -1824,7 +1824,6 @@ async def _push_loop(ws: WebSocket, interval: float, label: str):
                     LIVE_SENSITIVITY = max(0.05, min(0.95, float(data.get("value", 0.20))))
                     print(f"[WS] Sensitivity gate -> {LIVE_SENSITIVITY:.2f} "
                     f"(x{LIVE_SENSITIVITY / SENSITIVITY_BASELINE:.2f} on class thresholds)")
-                    print(f"[WS] Dynamic AI Sensitivity Gate set to {val}")
                     
             except (asyncio.TimeoutError, json.JSONDecodeError, ValueError, AttributeError):
                 pass
