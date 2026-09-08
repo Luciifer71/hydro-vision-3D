@@ -31,7 +31,7 @@ import cv2
 import numpy as np
 import torch
 from fastapi import (FastAPI, File, UploadFile, WebSocket, WebSocketDisconnect,
-                     Header, HTTPException, Request)
+                     Header, HTTPException)
 from fastapi.responses import StreamingResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from PIL import Image
@@ -1129,19 +1129,15 @@ def generate_mjpeg_stream():
             # ---------------- DETECTION + TRACKING ----------------
             if fid % detect_every_n == 1 or detect_every_n == 1:
                 try:
-                    # Dynamically read latest AI Sensitivity Gate floor from SESSION.cfg
-                    current_conf_floor = float(SESSION.cfg.get("conf_floor", conf_floor)) if SESSION.cfg else conf_floor
-                    yolo_conf = min(current_conf_floor, 0.05)
-
                     if DEVICE == "cuda":
                         with torch.amp.autocast("cuda"):
                             results = yolo_model.track(
-                                source=frame, conf=yolo_conf, imgsz=imgsz,
+                                source=frame, conf=conf_floor, imgsz=imgsz,
                                 device=DEVICE, persist=True, tracker=tracker_cfg,
                                 verbose=False)[0]
                     else:
                         results = yolo_model.track(
-                            source=frame, conf=yolo_conf, imgsz=imgsz,
+                            source=frame, conf=conf_floor, imgsz=imgsz,
                             device=DEVICE, persist=True, tracker=tracker_cfg,
                             verbose=False)[0]
 
@@ -1222,11 +1218,10 @@ def generate_mjpeg_stream():
                                 geo_source=geo_source, depth_index=depth_index,
                             )
 
-                            if conf >= current_conf_floor:
-                                current_boxes.append({
-                                    "coords": coords, "class": class_name,
-                                    "conf": conf, "track_id": track_id,
-                                })
+                            current_boxes.append({
+                                "coords": coords, "class": class_name,
+                                "conf": conf, "track_id": track_id,
+                            })
 
                     last_boxes = current_boxes
 
@@ -1404,16 +1399,6 @@ async def set_config(patch: dict, x_user_role: Optional[str] = Header(None)):
 def reset_config(x_user_role: Optional[str] = Header(None)):
     require_admin_role(x_user_role)
     return {"status": "reset", "config": CFG.reset()}
-
-
-@app.post("/api/config/threshold")
-async def set_threshold(request: Request):
-    body = await request.json()
-    val = float(body.get("value", 0.20))
-    val = max(0.05, min(0.80, val))  # clamp
-    if SESSION.cfg:
-        SESSION.cfg["conf_floor"] = val
-    return {"status": "ok", "conf_floor": val}
 
 
 @app.get("/api/stream_video")
@@ -1839,6 +1824,7 @@ async def _push_loop(ws: WebSocket, interval: float, label: str):
                     LIVE_SENSITIVITY = max(0.05, min(0.95, float(data.get("value", 0.20))))
                     print(f"[WS] Sensitivity gate -> {LIVE_SENSITIVITY:.2f} "
                     f"(x{LIVE_SENSITIVITY / SENSITIVITY_BASELINE:.2f} on class thresholds)")
+                    print(f"[WS] Dynamic AI Sensitivity Gate set to {val}")
                     
             except (asyncio.TimeoutError, json.JSONDecodeError, ValueError, AttributeError):
                 pass

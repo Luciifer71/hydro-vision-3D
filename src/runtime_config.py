@@ -166,7 +166,7 @@ DEFAULTS: Dict[str, Any] = {
         "max_upload_mb": 500,
         "max_frames_to_process": 9000,
         "keep_sessions": 3,
-        "keep_uploads": 3,
+        "keep_uploads": 10,      # was 3 — was deleting source footage
     },
 }
 

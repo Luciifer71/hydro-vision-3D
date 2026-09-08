@@ -1,5 +1,6 @@
 {
   "model": {
     "weights": "models/frozen/yolov8m_mixed_20260907.pt"
-  }
+  },
+  "detect_every_n": 3
 }
