@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore, CONFIG } from '../store.js';
+import { formatAreaM2 } from '../lib/derive.js';
 import EmptySessionState from '../components/EmptySessionState.jsx';
 
 export default function AlertsPage() {
@@ -90,8 +91,7 @@ export default function AlertsPage() {
                 </tr>
               ) : (
                 displayAlerts.map((h, i) => {
-                  const areaM2 = h.area_m2 ?? h.surface_area_m2;
-                  const areaText = areaM2 != null ? `${Number(areaM2).toFixed(1)} m²` : (h.area_px != null ? `${Math.round(h.area_px)} px²` : '—');
+                  const areaText = formatAreaM2(h);
                   const sev = (h.severity || 'LOW').toLowerCase();
                   const clsKey = h.class_name || h.type;
                   const typeLabel = CONFIG.TYPE_LABELS[clsKey] || CONFIG.TYPE_LABELS[h.type] || clsKey;

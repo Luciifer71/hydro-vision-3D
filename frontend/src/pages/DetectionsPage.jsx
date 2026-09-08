@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { useStore, CONFIG } from '../store.js';
+import { formatAreaM2, getNumericAreaM2 } from '../lib/derive.js';
 import EmptySessionState from '../components/EmptySessionState.jsx';
 
 export default function DetectionsPage() {
@@ -80,8 +81,8 @@ export default function DetectionsPage() {
     const sevA = severityWeight[(a.severity || 'LOW').toUpperCase()] || 1;
     const sevB = severityWeight[(b.severity || 'LOW').toUpperCase()] || 1;
     if (sevA !== sevB) return sevB - sevA;
-    const areaA = Number(a.area_m2 ?? a.surface_area_m2 ?? a.area_px ?? 0);
-    const areaB = Number(b.area_m2 ?? b.surface_area_m2 ?? b.area_px ?? 0);
+    const areaA = getNumericAreaM2(a);
+    const areaB = getNumericAreaM2(b);
     return areaB - areaA;
   });
 
@@ -288,8 +289,8 @@ export default function DetectionsPage() {
                 </tr>
               ) : (
                 displayList.map((h, idx) => {
-                  const areaM2 = h.area_m2 ?? h.surface_area_m2;
-                  const areaText = areaM2 != null ? `${Number(areaM2).toFixed(1)} m²` : (h.area_px != null ? `${Math.round(h.area_px)} px²` : '—');
+                  const areaText = formatAreaM2(h);
+                  const numAreaM2 = getNumericAreaM2(h);
                   const sev = (h.severity || 'LOW').toLowerCase();
                   const lat = h.location?.latitude ?? h.latitude;
                   const lon = h.location?.longitude ?? h.longitude;
@@ -311,7 +312,7 @@ export default function DetectionsPage() {
                         {typeof lat === 'number' ? lat.toFixed(5) : '—'}, {typeof lon === 'number' ? lon.toFixed(5) : '—'}
                       </td>
                       <td><span className={`sev-badge ${sev}`}>{sev.toUpperCase()}</span></td>
-                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{h.priority_score ?? (areaM2 != null ? (areaM2 * 10).toFixed(0) : '—')}</td>
+                      <td style={{ fontFamily: 'var(--font-mono)', fontWeight: 700 }}>{h.priority_score ?? (numAreaM2 > 0 ? (numAreaM2 * 10).toFixed(0) : '—')}</td>
                       <td style={{ fontSize: '0.72rem', color: 'var(--text-muted)' }}>{h.zone || '—'}</td>
                       <td>
                         <span style={{ 

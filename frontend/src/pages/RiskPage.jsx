@@ -138,7 +138,7 @@ export default function RiskPage() {
             A hazard is observed across N video frames, each yielding slightly different footprint measurements due to motion blur and frame clipping. HYDRO-VISION-3D uses <strong>median aggregation</strong> over moving averages for outlier-robust bounding:
           </p>
           <div className="formula" style={{ margin: '8px 0', fontFamily: 'var(--font-mono)', fontSize: '0.85rem', color: 'var(--amber)' }}>
-            area_px = median(&#123; area_px_1, area_px_2, ..., area_px_N &#125;)
+            area_m² = median(&#123; area_m²_1, area_m²_2, ..., area_m²_N &#125;)
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 8 }}>
             <div style={{ background: 'rgba(10, 14, 22, 0.75)', padding: '8px 12px', borderRadius: 4, border: '1px solid var(--border-subtle)' }}>

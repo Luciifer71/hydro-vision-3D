@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore, CONFIG } from '../store.js';
+import { getNumericAreaM2 } from '../lib/derive.js';
 
 export default function HazardModal({ hazard, onClose }) {
   const updateHazardStatus = useStore(state => state.updateHazardStatus);
@@ -188,15 +189,10 @@ export default function HazardModal({ hazard, onClose }) {
             <div style={{ background: 'rgba(18, 24, 38, 0.8)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: '8px', padding: '12px', display: 'flex', flexDirection: 'column' }}>
               <span style={{ fontSize: '0.65rem', color: '#94a3b8', textTransform: 'uppercase', fontWeight: 800, letterSpacing: '0.5px', marginBottom: '4px' }}>Spatial Area</span>
               <div style={{ display: 'flex', alignItems: 'baseline', gap: '4px' }}>
-                {(hazard.area_m2 ?? hazard.surface_area_m2) != null ? (
+                {getNumericAreaM2(hazard) > 0 ? (
                   <>
-                    <span style={{ fontSize: '1.2rem', color: '#ffffff', fontWeight: 800, fontFamily: 'monospace' }}>{Number(hazard.area_m2 ?? hazard.surface_area_m2).toFixed(2)}</span>
+                    <span style={{ fontSize: '1.2rem', color: '#ffffff', fontWeight: 800, fontFamily: 'monospace' }}>{getNumericAreaM2(hazard).toFixed(2)}</span>
                     <span style={{ fontSize: '0.75rem', color: '#10b981', fontWeight: 700 }}>m²</span>
-                  </>
-                ) : hazard.area_px != null ? (
-                  <>
-                    <span style={{ fontSize: '1.2rem', color: '#ffffff', fontWeight: 800, fontFamily: 'monospace' }}>{Math.round(hazard.area_px).toLocaleString()}</span>
-                    <span style={{ fontSize: '0.75rem', color: '#f59e0b', fontWeight: 700 }}>px²</span>
                   </>
                 ) : (
                   <span style={{ fontSize: '1.2rem', color: '#64748b', fontWeight: 800 }}>—</span>
