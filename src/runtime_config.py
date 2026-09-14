@@ -69,8 +69,8 @@ DEFAULTS: Dict[str, Any] = {
         "class_conf": {
             "open_manhole":      0.50,
             "drainage_overflow": 0.40,
-            "potholes":          0.40,
-            "waterlogging_area": 0.35,
+            "potholes":          0.271,#0.40
+            "waterlogging_area": 0.99, #0.35
             "damaged_footpath":  0.99,
         },
 

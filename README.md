@@ -4,8 +4,6 @@
 Infrastructure Intelligence**
 
 **Team:** Drone404\
-**Institution:** GSFC University\
-**Event:**  Hackathon\
 ------------------------------------------------------------------------
 
 ## 1. IDEA Overview
@@ -177,10 +175,6 @@ The application is designed around:
                                v
                        Supabase / PostgreSQL
 ```
-
-The public repository documents the architecture and methodology without
-exposing every internal inference, thresholding and decision rule used
-during development.
 
 ------------------------------------------------------------------------
 
